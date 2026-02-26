@@ -1,5 +1,5 @@
 /* ══════════════════════════════════════════════════════════════════════════
-   Doctor Pages — Dashboard, Review with Feedback Loop & Research Assistant
+   Doctor Pages — Dashboard, Review with Prescription Template & Research
    ══════════════════════════════════════════════════════════════════════════ */
 
 // ── Doctor Dashboard ──────────────────────────────────────────────────────
@@ -19,40 +19,54 @@ registerRoute('/doctor', async (app) => {
         <div id="pending-area">
             <div class="empty-state">
                 <div class="spinner" style="width:32px;height:32px;border-width:3px;margin:0 auto"></div>
-                <p style="margin-top:1rem;color:var(--text-muted)">Loading pending reports...</p>
+                <p style="margin-top:1rem;color:var(--text-muted)">Loading reports...</p>
             </div>
         </div>
+        <div id="my-reports-area" style="margin-top:2.5rem"></div>
     </div>`;
 
     try {
-        const data = await apiFetch('/api/doctor/pending');
+        // Load pending reports
+        const pendingData = await apiFetch('/api/doctor/pending');
         const area = document.getElementById('pending-area');
 
-        if (!data.reports || data.reports.length === 0) {
+        if (!pendingData.reports || pendingData.reports.length === 0) {
             area.innerHTML = `
-                <div class="empty-state">
-                    <div class="empty-state-icon">📋</div>
+                <h2 style="font-size:1.2rem;margin-bottom:1rem">📋 Pending Reviews</h2>
+                <div class="empty-state" style="padding:2rem">
+                    <div class="empty-state-icon">✅</div>
                     <p class="empty-state-text">No pending reports</p>
                     <p style="color:var(--text-muted)">All caught up! Check back later for new cases.</p>
                 </div>`;
-            return;
+        } else {
+            area.innerHTML = `
+                <div class="stats-row">
+                    <div class="card stat-card">
+                        <div class="stat-value">${pendingData.reports.length}</div>
+                        <div class="stat-label">Pending Reviews</div>
+                    </div>
+                    <div class="card stat-card">
+                        <div class="stat-value">${pendingData.reports.filter(r => r.urgency === 'critical' || r.urgency === 'high').length}</div>
+                        <div class="stat-label">High Priority</div>
+                    </div>
+                </div>
+                <h2 style="font-size:1.2rem;margin-bottom:1rem">📋 Pending Reviews</h2>
+                <div class="card-grid">
+                    ${pendingData.reports.map(r => renderPendingCard(r)).join('')}
+                </div>`;
         }
 
-        area.innerHTML = `
-            <div class="stats-row">
-                <div class="card stat-card">
-                    <div class="stat-value">${data.reports.length}</div>
-                    <div class="stat-label">Pending Reviews</div>
-                </div>
-                <div class="card stat-card">
-                    <div class="stat-value">${data.reports.filter(r => r.urgency === 'critical' || r.urgency === 'high').length}</div>
-                    <div class="stat-label">High Priority</div>
-                </div>
-            </div>
-            <h2 style="font-size:1.2rem;margin-bottom:1rem">Pending Cases</h2>
-            <div class="card-grid">
-                ${data.reports.map(r => renderPendingCard(r)).join('')}
-            </div>`;
+        // Load doctor's own reports (history)
+        const myData = await apiFetch('/api/doctor/my-reports');
+        const myArea = document.getElementById('my-reports-area');
+
+        if (myData.reports && myData.reports.length > 0) {
+            myArea.innerHTML = `
+                <h2 style="font-size:1.2rem;margin-bottom:1rem">🗂️ My Cases</h2>
+                <div class="card-grid">
+                    ${myData.reports.map(r => renderMyReportCard(r)).join('')}
+                </div>`;
+        }
     } catch (err) {
         showToast(err.message, 'error');
     }
@@ -86,6 +100,34 @@ function renderPendingCard(r) {
         <button class="btn btn-primary btn-sm" style="width:100%;margin-top:1rem">
             Review Case →
         </button>
+    </div>`;
+}
+
+function renderMyReportCard(r) {
+    const statusMap = {
+        completed: { cls: 'completed', label: '✅ Finalized' },
+        feedback_requested: { cls: 'feedback', label: '🔄 Awaiting Patient' },
+        pending_review: { cls: 'pending', label: '⏳ Returned' },
+    };
+    const s = statusMap[r.status] || { cls: 'pending', label: r.status };
+    const date = new Date(r.created_at).toLocaleDateString('en-IN', {
+        day: 'numeric', month: 'short', year: 'numeric'
+    });
+
+    return `
+    <div class="card" style="cursor:pointer" onclick="navigate('/doctor/review/${r.id}')">
+        <div class="card-header">
+            <div>
+                <div class="card-title">${r.patient_name || 'Patient'}</div>
+                <div style="color:var(--text-muted);font-size:0.8rem;margin-top:0.25rem">Report #${r.id}</div>
+            </div>
+            <span class="badge badge-status-${s.cls}">${s.label}</span>
+        </div>
+        <div class="diagnosis-field">
+            <div class="diagnosis-field-label">${r.status === 'completed' ? 'Final Diagnosis' : 'AI Diagnosis'}</div>
+            <div class="diagnosis-field-value">${r.status === 'completed' && r.final_diagnosis ? r.final_diagnosis : r.primary_condition}</div>
+        </div>
+        <div style="color:var(--text-muted);font-size:0.8rem;margin-top:0.5rem">📅 ${date}</div>
     </div>`;
 }
 
@@ -183,16 +225,6 @@ registerRoute('/doctor/review/:id', async (app, params) => {
                             <div class="diagnosis-field-label">Differential Diagnoses</div>
                             <div class="diagnosis-field-value">${r.differential_diagnoses}</div>
                         </div>
-                        ${r.medical_history ? `
-                        <div class="diagnosis-field">
-                            <div class="diagnosis-field-label">Medical History</div>
-                            <div class="diagnosis-field-value">${r.medical_history}</div>
-                        </div>` : ''}
-                        ${r.current_medications ? `
-                        <div class="diagnosis-field">
-                            <div class="diagnosis-field-label">Current Medications</div>
-                            <div class="diagnosis-field-value">${r.current_medications}</div>
-                        </div>` : ''}
                     </div>
                 </div>
 
@@ -200,22 +232,54 @@ registerRoute('/doctor/review/:id', async (app, params) => {
                 <div class="review-panel">
                     ${r.status !== 'completed' ? `
                     <div class="card">
-                        <h3 class="card-title" style="margin-bottom:1rem">📝 Your Review</h3>
+                        <h3 class="card-title" style="margin-bottom:1rem">📝 Your Review & Prescription</h3>
                         <form id="review-form">
                             <div class="form-group">
-                                <label class="form-label">Final Diagnosis</label>
+                                <label class="form-label">Final Diagnosis *</label>
                                 <input type="text" class="form-input" id="review-diagnosis"
                                        value="${r.primary_condition}" required>
                             </div>
-                            <div class="form-group">
-                                <label class="form-label">Comments / Feedback</label>
-                                <textarea class="form-textarea" id="review-comments"
-                                          placeholder="Add your clinical observations, or request more info from the patient..."
-                                          rows="4"></textarea>
+
+                            <div style="border:1px solid var(--border-subtle);border-radius:var(--radius-md);padding:1.25rem;margin-bottom:1.25rem;background:var(--bg-glass)">
+                                <h4 style="font-size:0.9rem;font-weight:600;margin-bottom:1rem;color:var(--accent-teal)">
+                                    💊 Prescription Template
+                                </h4>
+                                <div class="form-group">
+                                    <label class="form-label">Prescribed Medications</label>
+                                    <textarea class="form-textarea" id="review-meds" rows="3"
+                                              placeholder="e.g. Paracetamol 500mg, Amoxicillin 250mg..."></textarea>
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">Dosage Instructions</label>
+                                    <textarea class="form-textarea" id="review-dosage" rows="2"
+                                              placeholder="e.g. Take Paracetamol twice daily after meals..."></textarea>
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">Follow-up Date</label>
+                                    <input type="text" class="form-input" id="review-followup"
+                                           placeholder="e.g. After 1 week, or 2026-03-05">
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">Diet & Lifestyle Recommendations</label>
+                                    <textarea class="form-textarea" id="review-diet" rows="2"
+                                              placeholder="e.g. Avoid spicy food, increase fluid intake..."></textarea>
+                                </div>
+                                <div class="form-group" style="margin-bottom:0">
+                                    <label class="form-label">Additional Instructions</label>
+                                    <textarea class="form-textarea" id="review-instructions" rows="2"
+                                              placeholder="e.g. Get blood work done, visit ER if fever exceeds 103°F..."></textarea>
+                                </div>
                             </div>
+
+                            <div class="form-group">
+                                <label class="form-label">Doctor's Notes</label>
+                                <textarea class="form-textarea" id="review-comments" rows="3"
+                                          placeholder="Additional notes or questions for the patient..."></textarea>
+                            </div>
+
                             <div style="display:flex;gap:0.75rem;flex-direction:column">
                                 <button type="submit" class="btn btn-teal btn-lg" id="finalize-btn">
-                                    ✅ Finalize Diagnosis
+                                    ✅ Finalize & Issue Prescription
                                 </button>
                                 <button type="button" class="btn btn-secondary btn-lg" id="feedback-btn"
                                         onclick="requestPatientFeedback(${r.id})">
@@ -230,10 +294,16 @@ registerRoute('/doctor/review/:id', async (app, params) => {
                             <div class="diagnosis-field-label">Final Diagnosis</div>
                             <div class="diagnosis-field-value">${r.final_diagnosis}</div>
                         </div>
+                        ${r.prescribed_medications ? `
                         <div class="diagnosis-field">
-                            <div class="diagnosis-field-label">Doctor's Comments</div>
-                            <div class="diagnosis-field-value">${r.doctor_comments || 'No comments'}</div>
-                        </div>
+                            <div class="diagnosis-field-label">Prescribed Medications</div>
+                            <div class="diagnosis-field-value">${r.prescribed_medications}</div>
+                        </div>` : ''}
+                        ${r.doctor_comments ? `
+                        <div class="diagnosis-field">
+                            <div class="diagnosis-field-label">Doctor's Notes</div>
+                            <div class="diagnosis-field-value">${r.doctor_comments}</div>
+                        </div>` : ''}
                     </div>`}
 
                     <!-- AI Research Assistant -->
@@ -285,11 +355,10 @@ registerRoute('/doctor/review/:id', async (app, params) => {
     }
 });
 
-// ── Finalize diagnosis ────────────────────────────────────────────────────
+// ── Finalize diagnosis with prescription template ─────────────────────────
 
 window.finalizeDiagnosis = async function (reportId) {
     const diagnosis = document.getElementById('review-diagnosis').value.trim();
-    const comments = document.getElementById('review-comments').value.trim();
     if (!diagnosis) { showToast('Please enter a final diagnosis', 'error'); return; }
 
     const btn = document.getElementById('finalize-btn');
@@ -301,17 +370,22 @@ window.finalizeDiagnosis = async function (reportId) {
             method: 'POST',
             body: JSON.stringify({
                 final_diagnosis: diagnosis,
-                doctor_comments: comments,
+                doctor_comments: document.getElementById('review-comments').value.trim(),
                 modified: diagnosis !== document.getElementById('review-diagnosis').defaultValue,
                 is_final: true,
+                prescribed_medications: document.getElementById('review-meds').value.trim(),
+                dosage_instructions: document.getElementById('review-dosage').value.trim(),
+                follow_up_date: document.getElementById('review-followup').value.trim(),
+                diet_lifestyle: document.getElementById('review-diet').value.trim(),
+                additional_instructions: document.getElementById('review-instructions').value.trim(),
             }),
         });
-        showToast('Diagnosis finalized!', 'success');
+        showToast('Diagnosis finalized & prescription issued!', 'success');
         setTimeout(() => navigate('/doctor'), 1000);
     } catch (err) {
         showToast(err.message, 'error');
         btn.disabled = false;
-        btn.textContent = '✅ Finalize Diagnosis';
+        btn.textContent = '✅ Finalize & Issue Prescription';
     }
 };
 
@@ -320,7 +394,7 @@ window.finalizeDiagnosis = async function (reportId) {
 window.requestPatientFeedback = async function (reportId) {
     const comments = document.getElementById('review-comments').value.trim();
     if (!comments) {
-        showToast('Please enter feedback/questions for the patient in the comments field', 'error');
+        showToast('Please enter feedback/questions for the patient in the notes field', 'error');
         return;
     }
 

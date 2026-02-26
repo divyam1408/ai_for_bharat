@@ -78,10 +78,12 @@ class StartChat(BaseModel):
 
 class ChatMessage(BaseModel):
     message: str
+    attachment_url: Optional[str] = None  # optional uploaded file URL
 
 
 class PatientFeedbackResponse(BaseModel):
     message: str
+    attachment_url: Optional[str] = None
 
 
 # ── Doctor Models ──────────────────────────────────────────────────────────
@@ -89,12 +91,18 @@ class PatientFeedbackResponse(BaseModel):
 class DoctorReview(BaseModel):
     final_diagnosis: str
     doctor_comments: str
-    modified: bool = False  # whether the doctor changed the AI diagnosis
-    is_final: bool = True   # True = finalize, False = request feedback
+    modified: bool = False
+    is_final: bool = True
+    # Prescription template fields (required when is_final=True)
+    prescribed_medications: Optional[str] = ""
+    dosage_instructions: Optional[str] = ""
+    follow_up_date: Optional[str] = ""
+    diet_lifestyle: Optional[str] = ""
+    additional_instructions: Optional[str] = ""
 
 
 class DoctorFeedbackRequest(BaseModel):
-    message: str  # feedback message to send to patient
+    message: str
 
 
 class ResearchQuery(BaseModel):

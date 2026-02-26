@@ -53,7 +53,7 @@ async def send_chat_message(
         raise HTTPException(status_code=400, detail="Chat session is no longer active")
 
     # Save patient message
-    await save_chat_message(report_id, "patient", data.message)
+    await save_chat_message(report_id, "patient", data.message, data.attachment_url)
 
     # Get full history for context
     history = await get_chat_history(report_id)
@@ -147,6 +147,7 @@ async def respond_to_feedback(
         report_id=report_id,
         sender_role="patient",
         message=data.message,
+        attachment_url=data.attachment_url,
     )
 
     # Move back to pending_review for doctor

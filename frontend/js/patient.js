@@ -193,40 +193,6 @@ registerRoute('/patient/report/:id', async (app, params) => {
                 </div>
             </div>` : ''}
 
-            ${r.primary_condition ? `
-            <div class="card diagnosis-card" style="margin-top:1.5rem">
-                <h3 class="card-title" style="margin-bottom:1rem">🤖 AI Preliminary Diagnosis</h3>
-                <div class="diagnosis-field">
-                    <div class="diagnosis-field-label">Primary Condition</div>
-                    <div class="diagnosis-field-value" style="font-size:1.1rem;font-weight:600">${r.primary_condition}</div>
-                </div>
-                <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem">
-                    <div class="diagnosis-field">
-                        <div class="diagnosis-field-label">Confidence</div>
-                        <div class="confidence-bar">
-                            <div class="confidence-bar-fill" style="width:${Math.round(r.confidence * 100)}%"></div>
-                        </div>
-                        <span style="font-size:0.85rem">${Math.round(r.confidence * 100)}%</span>
-                    </div>
-                    <div class="diagnosis-field">
-                        <div class="diagnosis-field-label">Urgency</div>
-                        <span class="badge badge-${r.urgency}">${r.urgency}</span>
-                    </div>
-                </div>
-                <div class="diagnosis-field">
-                    <div class="diagnosis-field-label">Description</div>
-                    <div class="diagnosis-field-value">${r.description}</div>
-                </div>
-                <div class="diagnosis-field">
-                    <div class="diagnosis-field-label">Recommended Actions</div>
-                    <div class="diagnosis-field-value">${r.recommended_actions}</div>
-                </div>
-                <div class="diagnosis-field">
-                    <div class="diagnosis-field-label">Differential Diagnoses</div>
-                    <div class="diagnosis-field-value">${r.differential_diagnoses}</div>
-                </div>
-            </div>` : ''}
-
             ${r.feedback_thread && r.feedback_thread.length ? `
             <div class="card" style="margin-top:1.5rem;border-color:rgba(245,158,11,0.3)">
                 <h3 class="card-title" style="color:var(--accent-amber);margin-bottom:1rem">💬 Doctor-Patient Conversation</h3>
@@ -268,16 +234,42 @@ registerRoute('/patient/report/:id', async (app, params) => {
             ${r.status === 'completed' && r.final_diagnosis ? `
             <div class="card" style="margin-top:1.5rem;border-color:rgba(34,197,94,0.3);box-shadow:0 0 20px rgba(34,197,94,0.1)">
                 <h3 class="card-title" style="color:var(--accent-green);margin-bottom:1rem">
-                    ✅ Doctor's Final Diagnosis
+                    ✅ Doctor's Final Prescription
                 </h3>
                 <div class="diagnosis-field">
                     <div class="diagnosis-field-label">Final Diagnosis</div>
                     <div class="diagnosis-field-value" style="font-size:1.1rem;font-weight:600">${r.final_diagnosis}</div>
                 </div>
+                ${r.prescribed_medications ? `
                 <div class="diagnosis-field">
-                    <div class="diagnosis-field-label">Doctor's Comments</div>
-                    <div class="diagnosis-field-value">${r.doctor_comments || 'No additional comments'}</div>
-                </div>
+                    <div class="diagnosis-field-label">Prescribed Medications</div>
+                    <div class="diagnosis-field-value">${r.prescribed_medications}</div>
+                </div>` : ''}
+                ${r.dosage_instructions ? `
+                <div class="diagnosis-field">
+                    <div class="diagnosis-field-label">Dosage Instructions</div>
+                    <div class="diagnosis-field-value">${r.dosage_instructions}</div>
+                </div>` : ''}
+                ${r.follow_up_date ? `
+                <div class="diagnosis-field">
+                    <div class="diagnosis-field-label">Follow-up Date</div>
+                    <div class="diagnosis-field-value">${r.follow_up_date}</div>
+                </div>` : ''}
+                ${r.diet_lifestyle ? `
+                <div class="diagnosis-field">
+                    <div class="diagnosis-field-label">Diet & Lifestyle</div>
+                    <div class="diagnosis-field-value">${r.diet_lifestyle}</div>
+                </div>` : ''}
+                ${r.additional_instructions ? `
+                <div class="diagnosis-field">
+                    <div class="diagnosis-field-label">Additional Instructions</div>
+                    <div class="diagnosis-field-value">${r.additional_instructions}</div>
+                </div>` : ''}
+                ${r.doctor_comments ? `
+                <div class="diagnosis-field">
+                    <div class="diagnosis-field-label">Doctor's Notes</div>
+                    <div class="diagnosis-field-value">${r.doctor_comments}</div>
+                </div>` : ''}
                 <div class="diagnosis-field">
                     <div class="diagnosis-field-label">Reviewed By</div>
                     <div class="diagnosis-field-value">Dr. ${r.doctor_name || 'Unknown'}</div>
@@ -312,15 +304,17 @@ window.sendPatientResponse = async function (reportId) {
     btn.innerHTML = '<span class="spinner"></span> Sending...';
 
     try {
+        let attachmentUrl = null;
         if (feedbackFileToUpload) {
-            await uploadFile(feedbackFileToUpload);
+            const uploaded = await uploadFile(feedbackFileToUpload);
+            attachmentUrl = uploaded.url;
+            feedbackFileToUpload = null;
         }
         await apiFetch(`/api/patient/respond/${reportId}`, {
             method: 'POST',
-            body: JSON.stringify({ message }),
+            body: JSON.stringify({ message, attachment_url: attachmentUrl }),
         });
         showToast('Response sent to doctor!', 'success');
-        feedbackFileToUpload = null;
         navigate(`/patient/report/${reportId}`);
     } catch (err) {
         showToast(err.message, 'error');
@@ -329,7 +323,7 @@ window.sendPatientResponse = async function (reportId) {
     }
 };
 
-// ── Prescription PDF ──────────────────────────────────────────────────────
+// ── Prescription PDF (uses doctor-filled template data) ───────────────────
 
 window.printPrescription = async function (reportId) {
     try {
@@ -358,8 +352,8 @@ window.printPrescription = async function (reportId) {
                 .rx-section h3 { font-size: 14px; text-transform: uppercase; letter-spacing: 0.05em; color: #3b82f6; margin-bottom: 8px; border-bottom: 1px solid #e2e8f0; padding-bottom: 4px; }
                 .rx-section p { font-size: 14px; color: #334155; }
                 .rx-diagnosis { font-size: 20px; font-weight: 700; color: #1a1a2e; margin: 8px 0; }
-                .rx-actions { background: #eff6ff; border-radius: 8px; padding: 16px; }
-                .rx-actions li { margin-bottom: 4px; font-size: 14px; }
+                .rx-meds { background: #eff6ff; border-radius: 8px; padding: 16px; margin-top: 8px; }
+                .rx-meds li { margin-bottom: 4px; font-size: 14px; }
                 .rx-footer { margin-top: 40px; display: flex; justify-content: space-between; align-items: flex-end; border-top: 1px solid #e2e8f0; padding-top: 16px; }
                 .rx-footer .signature { text-align: right; }
                 .rx-footer .signature .line { border-top: 1px solid #333; width: 200px; margin-bottom: 4px; }
@@ -374,7 +368,7 @@ window.printPrescription = async function (reportId) {
             <div class="rx-header">
                 <div>
                     <h1>🏥 AI Healthcare</h1>
-                    <div style="font-size:12px;color:#94a3b8">Rural Diagnosis System — Medical Prescription</div>
+                    <div style="font-size:12px;color:#94a3b8">Medical Prescription</div>
                 </div>
                 <div class="meta">
                     <div>Report #${r.id}</div>
@@ -390,10 +384,43 @@ window.printPrescription = async function (reportId) {
             </div>
 
             <div class="rx-section">
-                <h3>Diagnosis</h3>
-                <div class="rx-diagnosis">${r.final_diagnosis || r.primary_condition}</div>
-                <p>${r.description || ''}</p>
+                <h3>Final Diagnosis</h3>
+                <div class="rx-diagnosis">${r.final_diagnosis}</div>
             </div>
+
+            ${r.prescribed_medications ? `
+            <div class="rx-section">
+                <h3>Prescribed Medications</h3>
+                <div class="rx-meds">
+                    <ul>
+                        ${r.prescribed_medications.split(/[,;\n]/).filter(Boolean).map(m => `<li>${m.trim()}</li>`).join('')}
+                    </ul>
+                </div>
+            </div>` : ''}
+
+            ${r.dosage_instructions ? `
+            <div class="rx-section">
+                <h3>Dosage Instructions</h3>
+                <p>${r.dosage_instructions}</p>
+            </div>` : ''}
+
+            ${r.diet_lifestyle ? `
+            <div class="rx-section">
+                <h3>Diet & Lifestyle Recommendations</h3>
+                <p>${r.diet_lifestyle}</p>
+            </div>` : ''}
+
+            ${r.additional_instructions ? `
+            <div class="rx-section">
+                <h3>Additional Instructions</h3>
+                <p>${r.additional_instructions}</p>
+            </div>` : ''}
+
+            ${r.follow_up_date ? `
+            <div class="rx-section">
+                <h3>Follow-up</h3>
+                <p><strong>${r.follow_up_date}</strong></p>
+            </div>` : ''}
 
             ${r.doctor_comments ? `
             <div class="rx-section">
@@ -401,24 +428,9 @@ window.printPrescription = async function (reportId) {
                 <p>${r.doctor_comments}</p>
             </div>` : ''}
 
-            <div class="rx-section">
-                <h3>Recommended Actions</h3>
-                <div class="rx-actions">
-                    <ul>
-                        ${(r.recommended_actions || '').split(/[,;•]/).filter(Boolean).map(a => `<li>${a.trim()}</li>`).join('')}
-                    </ul>
-                </div>
-            </div>
-
-            ${r.differential_diagnoses ? `
-            <div class="rx-section">
-                <h3>Differential Diagnoses</h3>
-                <p style="font-size:13px;color:#64748b">${r.differential_diagnoses}</p>
-            </div>` : ''}
-
             <div class="rx-footer">
                 <div style="font-size:12px;color:#94a3b8">
-                    <p>⚠️ This is an AI-assisted preliminary assessment.</p>
+                    <p>⚠️ This prescription is generated through AI-assisted diagnosis.</p>
                     <p>Consult your healthcare provider for definitive treatment.</p>
                 </div>
                 <div class="signature">
@@ -568,10 +580,12 @@ window.sendChatMessage = async function (reportId) {
     const messagesDiv = document.getElementById('chat-messages');
     const sendBtn = document.getElementById('send-btn');
 
+    let attachmentUrl = null;
     let attachmentHtml = '';
     if (chatFileToUpload) {
         try {
             const uploaded = await uploadFile(chatFileToUpload);
+            attachmentUrl = uploaded.url;
             attachmentHtml = renderAttachment(uploaded.url);
         } catch (err) {
             showToast('File upload failed: ' + err.message, 'error');
@@ -598,7 +612,10 @@ window.sendChatMessage = async function (reportId) {
     try {
         const data = await apiFetch(`/api/patient/chat/${reportId}`, {
             method: 'POST',
-            body: JSON.stringify({ message: message || '[Image attached]' }),
+            body: JSON.stringify({
+                message: message || '[Image attached]',
+                attachment_url: attachmentUrl,
+            }),
         });
         document.getElementById('typing')?.remove();
         messagesDiv.innerHTML += `

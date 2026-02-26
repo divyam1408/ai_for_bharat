@@ -60,6 +60,11 @@ async def init_db():
                 final_diagnosis TEXT NOT NULL,
                 doctor_comments TEXT DEFAULT '',
                 modified INTEGER NOT NULL DEFAULT 0,
+                prescribed_medications TEXT DEFAULT '',
+                dosage_instructions TEXT DEFAULT '',
+                follow_up_date TEXT DEFAULT '',
+                diet_lifestyle TEXT DEFAULT '',
+                additional_instructions TEXT DEFAULT '',
                 created_at TEXT NOT NULL DEFAULT (datetime('now')),
                 FOREIGN KEY (report_id) REFERENCES diagnosis_reports(id),
                 FOREIGN KEY (patient_id) REFERENCES users(id),
@@ -212,14 +217,21 @@ async def update_report_with_diagnosis(
         await db.close()
 
 
-async def update_report_status(report_id: int, status: str) -> None:
-    """Update a report's status."""
+async def update_report_status(report_id: int, status: str,
+                                doctor_id: int | None = None) -> None:
+    """Update a report's status and optionally assign a doctor."""
     db = await get_db()
     try:
-        await db.execute(
-            "UPDATE diagnosis_reports SET status = ? WHERE id = ?",
-            (status, report_id),
-        )
+        if doctor_id:
+            await db.execute(
+                "UPDATE diagnosis_reports SET status = ?, doctor_id = ? WHERE id = ?",
+                (status, doctor_id, report_id),
+            )
+        else:
+            await db.execute(
+                "UPDATE diagnosis_reports SET status = ? WHERE id = ?",
+                (status, report_id),
+            )
         await db.commit()
     finally:
         await db.close()
@@ -275,6 +287,8 @@ async def get_report_by_id(report_id: int) -> dict | None:
         cursor = await db.execute(
             """SELECT dr.*, u.name as patient_name,
                       fr.final_diagnosis, fr.doctor_comments, fr.modified as was_modified,
+                      fr.prescribed_medications, fr.dosage_instructions,
+                      fr.follow_up_date, fr.diet_lifestyle, fr.additional_instructions,
                       fr.created_at as review_date, du.name as doctor_name
                FROM diagnosis_reports dr
                JOIN users u ON dr.patient_id = u.id
@@ -297,16 +311,25 @@ async def create_final_report(
     final_diagnosis: str,
     doctor_comments: str,
     modified: bool,
+    prescribed_medications: str = "",
+    dosage_instructions: str = "",
+    follow_up_date: str = "",
+    diet_lifestyle: str = "",
+    additional_instructions: str = "",
 ) -> int:
     db = await get_db()
     try:
         cursor = await db.execute(
             """INSERT INTO final_reports
                (report_id, patient_id, doctor_id, original_ai_diagnosis,
-                final_diagnosis, doctor_comments, modified)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                final_diagnosis, doctor_comments, modified,
+                prescribed_medications, dosage_instructions,
+                follow_up_date, diet_lifestyle, additional_instructions)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (report_id, patient_id, doctor_id, original_ai_diagnosis,
-             final_diagnosis, doctor_comments, int(modified)),
+             final_diagnosis, doctor_comments, int(modified),
+             prescribed_medications, dosage_instructions,
+             follow_up_date, diet_lifestyle, additional_instructions),
         )
         await db.execute(
             "UPDATE diagnosis_reports SET status = 'completed', doctor_id = ? WHERE id = ?",
@@ -314,6 +337,26 @@ async def create_final_report(
         )
         await db.commit()
         return cursor.lastrowid
+    finally:
+        await db.close()
+
+
+async def get_doctor_reports(doctor_id: int) -> list[dict]:
+    """Get all reports a doctor has interacted with (feedback_requested, completed, pending_review with doctor_id)."""
+    db = await get_db()
+    try:
+        cursor = await db.execute(
+            """SELECT dr.*, u.name as patient_name,
+                      fr.final_diagnosis, fr.doctor_comments
+               FROM diagnosis_reports dr
+               JOIN users u ON dr.patient_id = u.id
+               LEFT JOIN final_reports fr ON dr.id = fr.report_id
+               WHERE dr.doctor_id = ?
+               ORDER BY dr.created_at DESC""",
+            (doctor_id,),
+        )
+        rows = await cursor.fetchall()
+        return [dict(r) for r in rows]
     finally:
         await db.close()
 

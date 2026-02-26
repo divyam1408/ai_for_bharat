@@ -7,6 +7,7 @@ from database import (
     get_pending_reports, get_report_by_id, create_final_report,
     get_chat_history, get_doctor_patient_messages,
     save_doctor_patient_message, update_report_status,
+    get_doctor_reports,
 )
 from services.ai_research import research_query
 
@@ -20,6 +21,16 @@ async def get_pending(user: dict = Depends(get_current_user)):
         raise HTTPException(status_code=403, detail="Only doctors can access this")
 
     reports = await get_pending_reports()
+    return {"reports": reports}
+
+
+@router.get("/my-reports")
+async def get_my_reports(user: dict = Depends(get_current_user)):
+    """Get all reports this doctor has interacted with."""
+    if user["role"] != "doctor":
+        raise HTTPException(status_code=403, detail="Only doctors can access this")
+
+    reports = await get_doctor_reports(user["user_id"])
     return {"reports": reports}
 
 
@@ -53,7 +64,7 @@ async def submit_review(
         raise HTTPException(status_code=400, detail="Report already finalized")
 
     if review.is_final:
-        # Finalize the diagnosis
+        # Finalize the diagnosis with prescription details
         final_id = await create_final_report(
             report_id=report_id,
             patient_id=report["patient_id"],
@@ -62,6 +73,11 @@ async def submit_review(
             final_diagnosis=review.final_diagnosis,
             doctor_comments=review.doctor_comments,
             modified=review.modified,
+            prescribed_medications=review.prescribed_medications or "",
+            dosage_instructions=review.dosage_instructions or "",
+            follow_up_date=review.follow_up_date or "",
+            diet_lifestyle=review.diet_lifestyle or "",
+            additional_instructions=review.additional_instructions or "",
         )
         return {
             "message": "Diagnosis finalized successfully",
@@ -69,13 +85,14 @@ async def submit_review(
             "status": "completed",
         }
     else:
-        # Request feedback from patient
+        # Request feedback from patient — assign doctor to this report
         await save_doctor_patient_message(
             report_id=report_id,
             sender_role="doctor",
             message=review.doctor_comments,
         )
-        await update_report_status(report_id, "feedback_requested")
+        await update_report_status(report_id, "feedback_requested",
+                                    doctor_id=user["user_id"])
         return {
             "message": "Feedback requested from patient",
             "status": "feedback_requested",
@@ -99,7 +116,8 @@ async def send_feedback_message(
         sender_role="doctor",
         message=data.message,
     )
-    await update_report_status(report_id, "feedback_requested")
+    await update_report_status(report_id, "feedback_requested",
+                                doctor_id=user["user_id"])
 
     return {"message": "Feedback sent to patient", "status": "feedback_requested"}
 
