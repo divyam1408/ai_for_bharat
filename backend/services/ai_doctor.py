@@ -16,10 +16,6 @@ client = ai.Client()
 # Hugging Face configuration
 #HF_MODEL = "huggingface:Intelligent-Internet/II-Medical-8B"
 HF_MODEL = "huggingface:Qwen/Qwen3-8B"
-os.environ["HUGGINGFACE_API_KEY"] = "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"
-os.environ["HUGGINGFACEHUB_API_TOKEN"] = "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"
-# HF_API_KEY = os.environ.get("HUGGINGFACE_API_KEY", "")
-# HUGGINGFACEHUB_API_TOKEN = os.environ.get("HUGGINGFACEHUB_API_TOKEN", "")
 
 # ── System prompts ─────────────────────────────────────────────────────────
 

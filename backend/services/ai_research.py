@@ -14,8 +14,6 @@ client = ai.Client()
 
 # Hugging Face configuration
 HF_MODEL = "huggingface:Qwen/Qwen3-8B"
-os.environ["HUGGINGFACE_API_KEY"] = "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"
-os.environ["HUGGINGFACEHUB_API_TOKEN"] = "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"
 
 SYSTEM_PROMPT_TEMPLATE = """You are an AI medical research assistant supporting a doctor in a rural 
 healthcare system in India. You have access to the complete patient case history.
