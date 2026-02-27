@@ -178,3 +178,22 @@ async def get_single_report(report_id: int, user: dict = Depends(get_current_use
     chat = await get_chat_history(report_id)
     feedback_thread = await get_doctor_patient_messages(report_id)
     return {**report, "chat_history": chat, "feedback_thread": feedback_thread}
+
+
+@router.delete("/report/{report_id}")
+async def delete_report(report_id: int, user: dict = Depends(get_current_user)):
+    """Delete a diagnosis report (only if patient owns it and it's in chatting status)."""
+    if user["role"] != "patient":
+        raise HTTPException(status_code=403, detail="Only patients can delete their reports")
+
+    report = await get_report_by_id(report_id)
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not found")
+    if report["patient_id"] != user["user_id"]:
+        raise HTTPException(status_code=403, detail="Access denied")
+    
+    # Allow deletion of reports in any status for patient's own reports
+    from database import delete_report as db_delete_report
+    await db_delete_report(report_id)
+    
+    return {"message": "Report deleted successfully"}

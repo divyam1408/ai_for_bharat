@@ -2,11 +2,27 @@
 
 import json
 import os
-from google import genai
+from pathlib import Path
+from dotenv import load_dotenv
+import aisuite as ai
 
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
+# Load environment variables from .env file
+env_path = Path(__file__).parent.parent / '.env'
+load_dotenv(dotenv_path=env_path)
+
+# Initialize aisuite client
+client = ai.Client()
+
+# Hugging Face configuration
+#HF_MODEL = "huggingface:Intelligent-Internet/II-Medical-8B"
+HF_MODEL = "huggingface:Qwen/Qwen3-8B"
+os.environ["HUGGINGFACE_API_KEY"] = "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"
+os.environ["HUGGINGFACEHUB_API_TOKEN"] = "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"
+# HF_API_KEY = os.environ.get("HUGGINGFACE_API_KEY", "")
+# HUGGINGFACEHUB_API_TOKEN = os.environ.get("HUGGINGFACEHUB_API_TOKEN", "")
 
 # ── System prompts ─────────────────────────────────────────────────────────
+
 
 CHAT_SYSTEM_PROMPT = """You are a compassionate AI medical assistant for a rural healthcare
 system in India. You are having a conversation with a patient to understand their symptoms.
@@ -18,8 +34,20 @@ Your goals:
 4. Keep responses concise (2-4 sentences)
 5. Do NOT provide a diagnosis during the chat — just gather information
 
+CRITICAL INSTRUCTIONS FOR CONVERSATION FLOW:
+- Gather ESSENTIAL information efficiently (main symptoms, duration, severity, medical history)
+- After 3-4 exchanges, if you have sufficient information about the patient's condition, 
+  provide a CONCLUDING message like: "Thank you for sharing this information. I now have 
+  enough details to generate a preliminary report. Please click 'Get Diagnosis' to proceed."
+- Do NOT ask endless follow-up questions. Focus on the most important details.
+- If the patient has already provided key information (symptoms, duration, severity, medical history),
+  conclude the conversation gracefully.
+- Do not ask questions and give CONCLUDING message simultaneously.
+
 IMPORTANT: You are NOT a replacement for a real doctor. You are only gathering information
 that will be used to generate a preliminary report for a qualified doctor to review.
+
+DO NOT provide Metadata like <Answer>, </Answer> etc in response , be simple and straightforward.
 """
 
 DIAGNOSIS_SYSTEM_PROMPT = """You are an AI medical assistant for a rural healthcare system in India.
@@ -57,36 +85,28 @@ async def chat_response(
 ) -> str:
     """Generate a conversational response to gather more symptom info."""
 
-    # Build conversation for the LLM
-    contents = []
+    # Build conversation for aisuite
+    messages = [{"role": "system", "content": CHAT_SYSTEM_PROMPT}]
+    
     for msg in chat_history:
-        role = "user" if msg["role"] == "patient" else "model"
-        contents.append(genai.types.Content(
-            role=role,
-            parts=[genai.types.Part(text=msg["content"])],
-        ))
+        role = "user" if msg["role"] == "patient" else "assistant"
+        messages.append({"role": role, "content": msg["content"]})
+    
     # Add the new message
-    contents.append(genai.types.Content(
-        role="user",
-        parts=[genai.types.Part(text=message)],
-    ))
+    messages.append({"role": "user", "content": message})
 
-    if not GEMINI_API_KEY:
+    if not os.environ.get("HUGGINGFACE_API_KEY", ""):
         return _chat_demo_fallback(message, len(chat_history))
 
     try:
-        client = genai.Client(api_key=GEMINI_API_KEY)
-        response = client.models.generate_content(
-            model="gemini-2.0-flash",
-            contents=contents,
-            config=genai.types.GenerateContentConfig(
-                system_instruction=CHAT_SYSTEM_PROMPT,
-                temperature=0.5,
-            ),
+        response = client.chat.completions.create(
+            model=HF_MODEL,
+            messages=messages,
+            temperature=0.5,
         )
-        return response.text.strip()
+        return response.choices[0].message.content.strip()
     except Exception as e:
-        print(f"Gemini chat error: {e}")
+        print(f"Hugging Face chat error: {e}")
         return _chat_demo_fallback(message, len(chat_history))
 
 
@@ -117,7 +137,7 @@ async def generate_diagnosis_from_chat(
 Based on the full conversation above, provide your preliminary diagnosis as JSON.
 """
 
-    if not GEMINI_API_KEY:
+    if not os.environ.get("HUGGINGFACE_API_KEY", ""):
         # Extract symptoms from all patient messages for the fallback
         all_symptoms = " ".join(
             msg["content"] for msg in chat_history if msg["role"] == "patient"
@@ -125,22 +145,24 @@ Based on the full conversation above, provide your preliminary diagnosis as JSON
         return _diagnosis_demo_fallback(all_symptoms)
 
     try:
-        client = genai.Client(api_key=GEMINI_API_KEY)
-        response = client.models.generate_content(
-            model="gemini-2.0-flash",
-            contents=transcript,
-            config=genai.types.GenerateContentConfig(
-                system_instruction=DIAGNOSIS_SYSTEM_PROMPT,
-                temperature=0.3,
-            ),
+        messages = [
+            {"role": "system", "content": DIAGNOSIS_SYSTEM_PROMPT},
+            {"role": "user", "content": transcript}
+        ]
+        
+        response = client.chat.completions.create(
+            model=HF_MODEL,
+            messages=messages,
+            temperature=0.3,
         )
-        text = response.text.strip()
+        
+        text = response.choices[0].message.content.strip()
         if text.startswith("```"):
             text = text.split("\n", 1)[1]
             text = text.rsplit("```", 1)[0]
         return json.loads(text)
     except Exception as e:
-        print(f"Gemini diagnosis error: {e}")
+        print(f"Hugging Face diagnosis error: {e}")
         all_symptoms = " ".join(
             msg["content"] for msg in chat_history if msg["role"] == "patient"
         )

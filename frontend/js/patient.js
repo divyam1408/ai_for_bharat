@@ -109,38 +109,58 @@ registerRoute('/patient', async (app) => {
 });
 
 function renderReportCard(r) {
-    const statusMap = {
-        completed: { cls: 'completed', label: '✅ Doctor Reviewed' },
-        pending_review: { cls: 'pending', label: '⏳ Awaiting Review' },
-        feedback_requested: { cls: 'feedback', label: '🔄 Doctor Needs More Info' },
-        chatting: { cls: 'chatting', label: '💬 Chat in Progress' },
-    };
-    const s = statusMap[r.status] || statusMap.chatting;
+    // Determine status with better labels
+    let statusInfo;
+    if (r.status === 'completed') {
+        statusInfo = { cls: 'completed', label: '✅ Doctor Reviewed', priority: 1 };
+    } else if (r.status === 'feedback_requested') {
+        statusInfo = { cls: 'feedback', label: '🔄 Doctor Needs More Info', priority: 2 };
+    } else if (r.status === 'pending_review' && r.doctor_id) {
+        statusInfo = { cls: 'under-review', label: '👨‍⚕️ Doctor Reviewing', priority: 3 };
+    } else if (r.status === 'pending_review' && !r.doctor_id) {
+        statusInfo = { cls: 'waiting', label: '⏰ Waiting for a Doctor', priority: 4 };
+    } else if (r.status === 'chatting') {
+        statusInfo = { cls: 'chatting', label: '💬 Chat in Progress', priority: 5 };
+    } else {
+        statusInfo = { cls: 'pending', label: '⏳ ' + r.status, priority: 6 };
+    }
+    
     const date = new Date(r.created_at).toLocaleDateString('en-IN', {
         day: 'numeric', month: 'short', year: 'numeric'
     });
 
     return `
-    <div class="card" style="cursor:pointer" onclick="navigate('/patient/report/${r.id}')">
-        <div class="card-header">
-            <div class="card-title">${r.primary_condition || 'Chat Session'}</div>
-            <span class="badge badge-${r.urgency || 'medium'}">${r.urgency || '—'}</span>
-        </div>
-        <span class="badge badge-status-${s.cls}" style="margin-bottom:0.75rem">${s.label}</span>
-        ${r.confidence ? `
-        <div class="diagnosis-field" style="margin-top:0.5rem">
-            <div class="diagnosis-field-label">AI Confidence</div>
-            <div class="confidence-bar">
-                <div class="confidence-bar-fill" style="width:${Math.round(r.confidence * 100)}%"></div>
+    <div class="card" style="position:relative">
+        <button class="btn btn-secondary btn-sm" 
+                style="position:absolute;top:0.75rem;right:0.75rem;padding:0.25rem 0.5rem;font-size:0.75rem"
+                onclick="event.stopPropagation();deleteReport(${r.id})"
+                title="Delete this report">
+            🗑️
+        </button>        <div onclick="navigate('/patient/report/${r.id}')" style="cursor:pointer">
+            <div class="card-header">
+                <div class="card-title">${r.primary_condition || 'Chat Session'}</div>
+                <span class="badge badge-${r.urgency || 'medium'}">${r.urgency || '—'}</span>
             </div>
-            <span style="font-size:0.8rem;color:var(--text-muted)">${Math.round(r.confidence * 100)}%</span>
-        </div>` : ''}
-        ${r.status === 'completed' && r.final_diagnosis ? `
-        <div class="diagnosis-field">
-            <div class="diagnosis-field-label">Doctor's Diagnosis</div>
-            <div class="diagnosis-field-value">${r.final_diagnosis}</div>
-        </div>` : ''}
-        <div style="color:var(--text-muted);font-size:0.8rem;margin-top:0.5rem">📅 ${date}</div>
+            <span class="badge badge-status-${statusInfo.cls}" style="margin-bottom:0.75rem">${statusInfo.label}</span>
+            ${r.doctor_name && r.status !== 'completed' ? `
+            <div style="font-size:0.8rem;color:var(--text-muted);margin-bottom:0.5rem">
+                👨‍⚕️ Assigned to Dr. ${r.doctor_name}
+            </div>` : ''}
+            ${r.confidence ? `
+            <div class="diagnosis-field" style="margin-top:0.5rem">
+                <div class="diagnosis-field-label">AI Confidence</div>
+                <div class="confidence-bar">
+                    <div class="confidence-bar-fill" style="width:${Math.round(r.confidence * 100)}%"></div>
+                </div>
+                <span style="font-size:0.8rem;color:var(--text-muted)">${Math.round(r.confidence * 100)}%</span>
+            </div>` : ''}
+            ${r.status === 'completed' && r.final_diagnosis ? `
+            <div class="diagnosis-field">
+                <div class="diagnosis-field-label">Doctor's Diagnosis</div>
+                <div class="diagnosis-field-value">${r.final_diagnosis}</div>
+            </div>` : ''}
+            <div style="color:var(--text-muted);font-size:0.8rem;margin-top:0.5rem">📅 ${date}</div>
+        </div>
     </div>`;
 }
 
@@ -163,21 +183,46 @@ registerRoute('/patient/report/:id', async (app, params) => {
     try {
         const r = await apiFetch(`/api/patient/report/${params.id}`);
         const container = document.getElementById('report-detail');
-        const statusMap = {
-            completed: '✅ Doctor Reviewed',
-            pending_review: '⏳ Awaiting Doctor Review',
-            feedback_requested: '🔄 Doctor Needs More Info',
-            chatting: '💬 Chat in Progress',
-        };
+        
+        // Determine status with better labels
+        let statusLabel, statusClass;
+        if (r.status === 'completed') {
+            statusLabel = '✅ Doctor Reviewed';
+            statusClass = 'completed';
+        } else if (r.status === 'feedback_requested') {
+            statusLabel = '🔄 Doctor Needs More Info';
+            statusClass = 'feedback';
+        } else if (r.status === 'pending_review' && r.doctor_id) {
+            statusLabel = '👨‍⚕️ Doctor Reviewing';
+            statusClass = 'under-review';
+        } else if (r.status === 'pending_review' && !r.doctor_id) {
+            statusLabel = '⏰ Waiting for a Doctor';
+            statusClass = 'waiting';
+        } else if (r.status === 'chatting') {
+            statusLabel = '💬 Chat in Progress';
+            statusClass = 'chatting';
+        } else {
+            statusLabel = r.status;
+            statusClass = 'pending';
+        }
 
         container.innerHTML = `
-            <button class="btn btn-secondary btn-sm" onclick="navigate('/patient')" style="margin-bottom:1.5rem">
-                ← Back to Dashboard
-            </button>
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.5rem">
+                <button class="btn btn-secondary btn-sm" onclick="navigate('/patient')">
+                    ← Back to Dashboard
+                </button>
+                <button class="btn btn-secondary btn-sm" onclick="deleteReport(${r.id})" 
+                        style="color:var(--accent-rose)" title="Delete this report">
+                    🗑️ Delete Report                </button>
+            </div>
 
             <h1 class="page-title">Diagnosis Report #${r.id}</h1>
-            <span class="badge badge-status-${r.status === 'completed' ? 'completed' : r.status === 'feedback_requested' ? 'feedback' : 'pending'}"
-                  style="margin:0.75rem 0;display:inline-flex">${statusMap[r.status] || r.status}</span>
+            <span class="badge badge-status-${statusClass}"
+                  style="margin:0.75rem 0;display:inline-flex">${statusLabel}</span>
+            ${r.doctor_name && r.status !== 'completed' ? `
+            <div style="font-size:0.9rem;color:var(--text-secondary);margin-top:0.5rem">
+                👨‍⚕️ Assigned to Dr. ${r.doctor_name}
+            </div>` : ''}
 
             ${r.chat_history && r.chat_history.length ? `
             <div class="card" style="margin-top:1.5rem">
@@ -552,7 +597,7 @@ registerRoute('/patient/chatroom/:id', async (app, params) => {
             <button class="btn btn-teal" id="diagnose-btn" onclick="requestDiagnosis(${reportId})">
                 🩺 Generate Diagnosis Report
             </button>
-            <button class="btn btn-secondary btn-sm" onclick="navigate('/patient')">Cancel</button>
+            <button class="btn btn-secondary btn-sm" onclick="cancelChat(${reportId})">Cancel</button>
         </div>
     </div>`;
 
@@ -689,3 +734,36 @@ function escapeHtml(text) {
     div.textContent = text;
     return div.innerHTML;
 }
+
+// ── Delete Report ─────────────────────────────────────────────────────────
+
+window.deleteReport = async function (reportId) {
+    if (!confirm('Are you sure you want to delete this report? This action cannot be undone.')) {
+        return;
+    }
+
+    try {
+        await apiFetch(`/api/patient/report/${reportId}`, { method: 'DELETE' });
+        showToast('Report deleted successfully', 'success');
+        navigate('/patient');
+    } catch (err) {
+        showToast(err.message, 'error');
+    }
+};
+
+// ── Cancel Chat Without Saving ────────────────────────────────────────────
+
+window.cancelChat = async function (reportId) {
+    if (!confirm('Are you sure you want to cancel? Your chat will not be saved.')) {
+        return;
+    }
+
+    try {
+        // Delete the report (which is still in 'chatting' status)
+        await apiFetch(`/api/patient/report/${reportId}`, { method: 'DELETE' });
+        showToast('Chat cancelled', 'info');
+        navigate('/patient');
+    } catch (err) {
+        showToast(err.message, 'error');
+    }
+};

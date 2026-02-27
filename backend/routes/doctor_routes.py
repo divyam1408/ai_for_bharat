@@ -9,7 +9,7 @@ from database import (
     save_doctor_patient_message, update_report_status,
     get_doctor_reports,
 )
-from services.ai_research import research_query
+from services.ai_research import research_chat
 
 router = APIRouter(prefix="/api/doctor", tags=["doctor"])
 
@@ -122,11 +122,44 @@ async def send_feedback_message(
     return {"message": "Feedback sent to patient", "status": "feedback_requested"}
 
 
-@router.post("/research")
-async def do_research(data: ResearchQuery, user: dict = Depends(get_current_user)):
-    """Query the AI Research Assistant."""
+@router.post("/research/{report_id}")
+async def do_research_chat(
+    report_id: int, data: ResearchQuery, user: dict = Depends(get_current_user)
+):
+    """Conversational AI Research Assistant with full case context."""
     if user["role"] != "doctor":
         raise HTTPException(status_code=403, detail="Only doctors can use research assistant")
 
-    result = await research_query(query=data.query, context=data.context)
+    # Get full report details with chat history
+    report = await get_report_by_id(report_id)
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not found")
+    
+    # Get patient-AI chat history
+    patient_chat = await get_chat_history(report_id)
+    
+    # Get doctor-patient feedback thread
+    feedback_thread = await get_doctor_patient_messages(report_id)
+    
+    # Get research chat history (stored in context for now, or pass empty list)
+    research_history = []  # TODO: Store research chat history if needed
+    
+    # Build diagnosis info
+    diagnosis_info = {
+        "primary_condition": report.get("primary_condition"),
+        "confidence": report.get("confidence"),
+        "urgency": report.get("urgency"),
+        "description": report.get("description"),
+        "recommended_actions": report.get("recommended_actions"),
+        "differential_diagnoses": report.get("differential_diagnoses"),
+    }
+    
+    result = await research_chat(
+        message=data.query,
+        chat_history=research_history,
+        patient_chat_history=patient_chat,
+        feedback_thread=feedback_thread,
+        diagnosis_info=diagnosis_info,
+    )
+    
     return {"response": result}

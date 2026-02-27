@@ -243,13 +243,22 @@ async def get_reports_for_patient(patient_id: int) -> list[dict]:
         cursor = await db.execute(
             """SELECT dr.*, u.name as patient_name,
                       fr.final_diagnosis, fr.doctor_comments, fr.modified as was_modified,
-                      du.name as doctor_name
+                      du.name as doctor_name,
+                      fr.created_at as review_date
                FROM diagnosis_reports dr
                JOIN users u ON dr.patient_id = u.id
                LEFT JOIN final_reports fr ON dr.id = fr.report_id
                LEFT JOIN users du ON fr.doctor_id = du.id
                WHERE dr.patient_id = ?
-               ORDER BY dr.created_at DESC""",
+               ORDER BY 
+                 CASE 
+                   WHEN dr.status = 'completed' THEN 1
+                   WHEN dr.status = 'feedback_requested' THEN 2
+                   WHEN dr.doctor_id IS NOT NULL THEN 3
+                   WHEN dr.status = 'pending_review' THEN 4
+                   ELSE 5
+                 END,
+                 COALESCE(fr.created_at, dr.created_at) DESC""",
             (patient_id,),
         )
         rows = await cursor.fetchall()
@@ -424,5 +433,19 @@ async def get_doctor_patient_messages(report_id: int) -> list[dict]:
         )
         rows = await cursor.fetchall()
         return [dict(r) for r in rows]
+    finally:
+        await db.close()
+
+
+async def delete_report(report_id: int) -> None:
+    """Delete a diagnosis report and all associated data (chat messages, feedback, final report)."""
+    db = await get_db()
+    try:
+        # Delete in order: chat messages, doctor-patient messages, final report, then the report itself
+        await db.execute("DELETE FROM chat_messages WHERE report_id = ?", (report_id,))
+        await db.execute("DELETE FROM doctor_patient_messages WHERE report_id = ?", (report_id,))
+        await db.execute("DELETE FROM final_reports WHERE report_id = ?", (report_id,))
+        await db.execute("DELETE FROM diagnosis_reports WHERE id = ?", (report_id,))
+        await db.commit()
     finally:
         await db.close()

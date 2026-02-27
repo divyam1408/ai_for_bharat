@@ -16,53 +16,71 @@ registerRoute('/doctor', async (app) => {
                 <p class="page-subtitle">Review AI-generated diagnoses and provide medical validation</p>
             </div>
         </div>
-        <div id="pending-area">
-            <div class="empty-state">
-                <div class="spinner" style="width:32px;height:32px;border-width:3px;margin:0 auto"></div>
-                <p style="margin-top:1rem;color:var(--text-muted)">Loading reports...</p>
-            </div>
-        </div>
+        <div id="available-reports-section"></div>
         <div id="my-reports-area" style="margin-top:2.5rem"></div>
     </div>`;
 
     try {
-        // Load pending reports
+        // Load pending reports count for the clickable section
         const pendingData = await apiFetch('/api/doctor/pending');
-        const area = document.getElementById('pending-area');
+        const availableSection = document.getElementById('available-reports-section');
+        
+        const pendingCount = pendingData.reports?.length || 0;
+        const highPriorityCount = pendingData.reports?.filter(r => r.urgency === 'critical' || r.urgency === 'high').length || 0;
 
-        if (!pendingData.reports || pendingData.reports.length === 0) {
-            area.innerHTML = `
-                <h2 style="font-size:1.2rem;margin-bottom:1rem">📋 Pending Reviews</h2>
-                <div class="empty-state" style="padding:2rem">
-                    <div class="empty-state-icon">✅</div>
-                    <p class="empty-state-text">No pending reports</p>
-                    <p style="color:var(--text-muted)">All caught up! Check back later for new cases.</p>
-                </div>`;
-        } else {
-            area.innerHTML = `
-                <div class="stats-row">
-                    <div class="card stat-card">
-                        <div class="stat-value">${pendingData.reports.length}</div>
-                        <div class="stat-label">Pending Reviews</div>
+        // Create clickable "All Available Reports" section
+        availableSection.innerHTML = `
+            <div class="card" style="cursor:pointer;border:2px solid var(--accent-teal);background:linear-gradient(135deg, rgba(20,184,166,0.05), rgba(59,130,246,0.05));transition:all 0.2s"
+                 onclick="navigate('/doctor/available')"
+                 onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 8px 24px rgba(20,184,166,0.15)'"
+                 onmouseout="this.style.transform='translateY(0)';this.style.boxShadow=''">
+                <div style="display:flex;justify-content:space-between;align-items:center">
+                    <div>
+                        <h2 style="font-size:1.3rem;margin-bottom:0.5rem;color:var(--accent-teal)">
+                            📋 All Available Reports
+                        </h2>
+                        <p style="color:var(--text-secondary);font-size:0.9rem">
+                            ${pendingCount === 0 ? 'No reports pending review' : 
+                              `${pendingCount} report${pendingCount !== 1 ? 's' : ''} waiting for review`}
+                            ${highPriorityCount > 0 ? ` • ${highPriorityCount} high priority` : ''}
+                        </p>
                     </div>
-                    <div class="card stat-card">
-                        <div class="stat-value">${pendingData.reports.filter(r => r.urgency === 'critical' || r.urgency === 'high').length}</div>
-                        <div class="stat-label">High Priority</div>
+                    <div style="display:flex;align-items:center;gap:1rem">
+                        ${pendingCount > 0 ? `
+                        <div class="stat-value" style="font-size:2.5rem;background:linear-gradient(135deg,var(--accent-teal),var(--accent-blue));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text">
+                            ${pendingCount}
+                        </div>` : ''}
+                        <span style="font-size:1.5rem">→</span>
                     </div>
                 </div>
-                <h2 style="font-size:1.2rem;margin-bottom:1rem">📋 Pending Reviews</h2>
-                <div class="card-grid">
-                    ${pendingData.reports.map(r => renderPendingCard(r)).join('')}
-                </div>`;
-        }
+            </div>`;
 
-        // Load doctor's own reports (history)
+        // Load doctor's own reports (cases they're working on or have completed)
         const myData = await apiFetch('/api/doctor/my-reports');
         const myArea = document.getElementById('my-reports-area');
 
-        if (myData.reports && myData.reports.length > 0) {
+        if (!myData.reports || myData.reports.length === 0) {
             myArea.innerHTML = `
                 <h2 style="font-size:1.2rem;margin-bottom:1rem">🗂️ My Cases</h2>
+                <div class="empty-state" style="padding:2rem">
+                    <div class="empty-state-icon">📂</div>
+                    <p class="empty-state-text">No cases yet</p>
+                    <p style="color:var(--text-muted)">Start reviewing reports from the available reports section above.</p>
+                </div>`;
+        } else {
+            const completed = myData.reports.filter(r => r.status === 'completed').length;
+            const feedback = myData.reports.filter(r => r.status === 'feedback_requested').length;
+            const inProgress = myData.reports.filter(r => r.status === 'pending_review' || r.status === 'under_review').length;
+
+            myArea.innerHTML = `
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+                    <h2 style="font-size:1.2rem">🗂️ My Cases</h2>
+                    <div style="display:flex;gap:1rem;font-size:0.85rem;color:var(--text-muted)">
+                        <span>✅ ${completed} Completed</span>
+                        ${feedback > 0 ? `<span>🔄 ${feedback} Awaiting Patient</span>` : ''}
+                        ${inProgress > 0 ? `<span>⏳ ${inProgress} In Progress</span>` : ''}
+                    </div>
+                </div>
                 <div class="card-grid">
                     ${myData.reports.map(r => renderMyReportCard(r)).join('')}
                 </div>`;
@@ -130,6 +148,73 @@ function renderMyReportCard(r) {
         <div style="color:var(--text-muted);font-size:0.8rem;margin-top:0.5rem">📅 ${date}</div>
     </div>`;
 }
+
+// ── All Available Reports Page ────────────────────────────────────────────
+
+registerRoute('/doctor/available', async (app) => {
+    const user = getUser();
+    if (!user || user.role !== 'doctor') { navigate('/login'); return; }
+
+    app.innerHTML = renderNavbar('doctor') + `
+    <div class="page-container">
+        <button class="btn btn-secondary btn-sm" onclick="navigate('/doctor')" style="margin-bottom:1.5rem">
+            ← Back to Dashboard
+        </button>
+        <div class="page-header">
+            <div>
+                <h1 class="page-title">All Available Reports</h1>
+                <p class="page-subtitle">Reports waiting for doctor review</p>
+            </div>
+        </div>
+        <div id="pending-area">
+            <div class="empty-state">
+                <div class="spinner" style="width:32px;height:32px;border-width:3px;margin:0 auto"></div>
+                <p style="margin-top:1rem;color:var(--text-muted)">Loading reports...</p>
+            </div>
+        </div>
+    </div>`;
+
+    try {
+        const pendingData = await apiFetch('/api/doctor/pending');
+        const area = document.getElementById('pending-area');
+
+        if (!pendingData.reports || pendingData.reports.length === 0) {
+            area.innerHTML = `
+                <div class="empty-state" style="padding:2rem">
+                    <div class="empty-state-icon">✅</div>
+                    <p class="empty-state-text">No pending reports</p>
+                    <p style="color:var(--text-muted)">All caught up! Check back later for new cases.</p>
+                </div>`;
+        } else {
+            area.innerHTML = `
+                <div class="stats-row">
+                    <div class="card stat-card">
+                        <div class="stat-value">${pendingData.reports.length}</div>
+                        <div class="stat-label">Pending Reviews</div>
+                    </div>
+                    <div class="card stat-card">
+                        <div class="stat-value">${pendingData.reports.filter(r => r.urgency === 'critical' || r.urgency === 'high').length}</div>
+                        <div class="stat-label">High Priority</div>
+                    </div>
+                    <div class="card stat-card">
+                        <div class="stat-value">${pendingData.reports.filter(r => r.urgency === 'medium').length}</div>
+                        <div class="stat-label">Medium Priority</div>
+                    </div>
+                    <div class="card stat-card">
+                        <div class="stat-value">${pendingData.reports.filter(r => r.urgency === 'low').length}</div>
+                        <div class="stat-label">Low Priority</div>
+                    </div>
+                </div>
+                <h2 style="font-size:1.2rem;margin-bottom:1rem">📋 Reports Awaiting Review</h2>
+                <div class="card-grid">
+                    ${pendingData.reports.map(r => renderPendingCard(r)).join('')}
+                </div>`;
+        }
+    } catch (err) {
+        showToast(err.message, 'error');
+    }
+});
+
 
 // ── Doctor Review Page ────────────────────────────────────────────────────
 
@@ -231,12 +316,40 @@ registerRoute('/doctor/review/:id', async (app, params) => {
                 <!-- Right column: Review form + Research assistant -->
                 <div class="review-panel">
                     ${r.status !== 'completed' ? `
-                    <div class="card">
-                        <h3 class="card-title" style="margin-bottom:1rem">📝 Your Review & Prescription</h3>
-                        <form id="review-form">
+                    <div class="card" id="review-card">
+                        <h3 class="card-title" style="margin-bottom:1rem">📝 Your Review</h3>
+                        
+                        <!-- Initial Clean View -->
+                        <div id="initial-review-view">
                             <div class="form-group">
                                 <label class="form-label">Final Diagnosis *</label>
                                 <input type="text" class="form-input" id="review-diagnosis"
+                                       value="${r.primary_condition}" required>
+                            </div>
+
+                            <div class="form-group">
+                                <label class="form-label">Doctor's Notes / Comments</label>
+                                <textarea class="form-textarea" id="review-comments" rows="4"
+                                          placeholder="Add your notes, observations, or questions for the patient..."></textarea>
+                            </div>
+
+                            <div style="display:flex;gap:0.75rem;flex-direction:column">
+                                <button type="button" class="btn btn-teal btn-lg" id="show-prescription-btn"
+                                        onclick="showPrescriptionForm(${r.id})">
+                                    ✅ Finalize & Issue Prescription
+                                </button>
+                                <button type="button" class="btn btn-secondary btn-lg" id="feedback-btn"
+                                        onclick="requestPatientFeedback(${r.id})">
+                                    🔄 Request Patient Feedback
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Prescription Form (Hidden Initially) -->
+                        <form id="prescription-form" style="display:none">
+                            <div class="form-group">
+                                <label class="form-label">Final Diagnosis *</label>
+                                <input type="text" class="form-input" id="prescription-diagnosis"
                                        value="${r.primary_condition}" required>
                             </div>
 
@@ -273,17 +386,17 @@ registerRoute('/doctor/review/:id', async (app, params) => {
 
                             <div class="form-group">
                                 <label class="form-label">Doctor's Notes</label>
-                                <textarea class="form-textarea" id="review-comments" rows="3"
+                                <textarea class="form-textarea" id="prescription-comments" rows="3"
                                           placeholder="Additional notes or questions for the patient..."></textarea>
                             </div>
 
                             <div style="display:flex;gap:0.75rem;flex-direction:column">
                                 <button type="submit" class="btn btn-teal btn-lg" id="finalize-btn">
-                                    ✅ Finalize & Issue Prescription
+                                    ✅ Confirm & Issue Prescription
                                 </button>
-                                <button type="button" class="btn btn-secondary btn-lg" id="feedback-btn"
-                                        onclick="requestPatientFeedback(${r.id})">
-                                    🔄 Request Patient Feedback
+                                <button type="button" class="btn btn-secondary btn-lg"
+                                        onclick="hidePrescriptionForm()">
+                                    ← Back to Review
                                 </button>
                             </div>
                         </form>
@@ -306,36 +419,38 @@ registerRoute('/doctor/review/:id', async (app, params) => {
                         </div>` : ''}
                     </div>`}
 
-                    <!-- AI Research Assistant -->
+                    <!-- AI Research Assistant - Chat Interface -->
                     <div class="card research-panel">
-                        <h3 class="card-title" style="margin-bottom:1rem">🔬 AI Research Assistant</h3>
+                        <h3 class="card-title" style="margin-bottom:0.5rem">🔬 AI Research Assistant</h3>
                         <p style="color:var(--text-secondary);font-size:0.85rem;margin-bottom:1rem">
-                            Ask questions about conditions, treatments, or upload images for analysis.
+                            Chat with AI about this case. It has full context of patient history and diagnosis.
                         </p>
-                        <div class="form-group" style="margin-bottom:0.75rem">
-                            <input type="text" class="form-input" id="research-input"
-                                   placeholder="e.g. What are the treatment guidelines for viral fever?">
+                        
+                        <!-- Research Chat Messages -->
+                        <div class="research-chat-messages" id="research-chat-${r.id}" style="max-height:400px;overflow-y:auto;margin-bottom:1rem;padding:0.75rem;background:var(--bg-subtle);border-radius:var(--radius-md)">
+                            <div class="chat-bubble assistant" style="margin-bottom:0.75rem">
+                                <div class="bubble-label">AI Research Assistant</div>
+                                Hi! I have full context of this patient's case. Ask me anything about diagnosis, treatment options, drug interactions, or guidelines.
+                            </div>
                         </div>
-                        <div style="display:flex;gap:0.75rem;align-items:center">
-                            <label class="btn btn-secondary btn-sm" style="cursor:pointer;flex-shrink:0">
-                                📎 Upload Image
-                                <input type="file" id="research-file" accept="image/*,.pdf" style="display:none"
-                                       onchange="handleResearchFileSelect(this)">
-                            </label>
-                            <span id="research-file-name" style="font-size:0.8rem;color:var(--text-muted)"></span>
-                            <button class="btn btn-teal btn-sm" id="research-btn" style="margin-left:auto"
-                                    onclick="queryResearch('${r.primary_condition}')">
-                                🔍 Search
+                        
+                        <!-- Research Chat Input -->
+                        <div style="display:flex;gap:0.5rem;align-items:flex-end">
+                            <div style="flex:1">
+                                <input type="text" class="form-input" id="research-input-${r.id}"
+                                       placeholder="Ask about this case..." style="margin-bottom:0">
+                            </div>
+                            <button class="btn btn-teal btn-sm" id="research-send-btn-${r.id}"
+                                    onclick="sendResearchMessage(${r.id})">
+                                Send
                             </button>
-                        </div>
-                        <div class="research-response" id="research-response" style="display:none;margin-top:1rem">
                         </div>
                     </div>
                 </div>
             </div>`;
 
         // Review form finalize handler
-        const form = document.getElementById('review-form');
+        const form = document.getElementById('prescription-form');
         if (form) {
             form.addEventListener('submit', (e) => {
                 e.preventDefault();
@@ -343,11 +458,11 @@ registerRoute('/doctor/review/:id', async (app, params) => {
             });
         }
 
-        // Research enter key
-        const researchInput = document.getElementById('research-input');
+        // Research chat enter key
+        const researchInput = document.getElementById(`research-input-${r.id}`);
         if (researchInput) {
             researchInput.addEventListener('keydown', (e) => {
-                if (e.key === 'Enter') document.getElementById('research-btn').click();
+                if (e.key === 'Enter') document.getElementById(`research-send-btn-${r.id}`).click();
             });
         }
     } catch (err) {
@@ -355,10 +470,41 @@ registerRoute('/doctor/review/:id', async (app, params) => {
     }
 });
 
+// ── Show/Hide Prescription Form ───────────────────────────────────────────
+
+window.showPrescriptionForm = function (reportId) {
+    // Copy diagnosis and comments from initial view to prescription form
+    const diagnosis = document.getElementById('review-diagnosis').value;
+    const comments = document.getElementById('review-comments').value;
+    
+    document.getElementById('prescription-diagnosis').value = diagnosis;
+    document.getElementById('prescription-comments').value = comments;
+    
+    // Hide initial view, show prescription form
+    document.getElementById('initial-review-view').style.display = 'none';
+    document.getElementById('prescription-form').style.display = 'block';
+    
+    // Update card title
+    document.querySelector('#review-card .card-title').textContent = '💊 Issue Prescription';
+};
+
+window.hidePrescriptionForm = function () {
+    // Copy back any changes to diagnosis
+    const diagnosis = document.getElementById('prescription-diagnosis').value;
+    document.getElementById('review-diagnosis').value = diagnosis;
+    
+    // Show initial view, hide prescription form
+    document.getElementById('initial-review-view').style.display = 'block';
+    document.getElementById('prescription-form').style.display = 'none';
+    
+    // Update card title
+    document.querySelector('#review-card .card-title').textContent = '📝 Your Review';
+};
+
 // ── Finalize diagnosis with prescription template ─────────────────────────
 
 window.finalizeDiagnosis = async function (reportId) {
-    const diagnosis = document.getElementById('review-diagnosis').value.trim();
+    const diagnosis = document.getElementById('prescription-diagnosis').value.trim();
     if (!diagnosis) { showToast('Please enter a final diagnosis', 'error'); return; }
 
     const btn = document.getElementById('finalize-btn');
@@ -370,8 +516,8 @@ window.finalizeDiagnosis = async function (reportId) {
             method: 'POST',
             body: JSON.stringify({
                 final_diagnosis: diagnosis,
-                doctor_comments: document.getElementById('review-comments').value.trim(),
-                modified: diagnosis !== document.getElementById('review-diagnosis').defaultValue,
+                doctor_comments: document.getElementById('prescription-comments').value.trim(),
+                modified: diagnosis !== document.getElementById('prescription-diagnosis').defaultValue,
                 is_final: true,
                 prescribed_medications: document.getElementById('review-meds').value.trim(),
                 dosage_instructions: document.getElementById('review-dosage').value.trim(),
@@ -385,7 +531,7 @@ window.finalizeDiagnosis = async function (reportId) {
     } catch (err) {
         showToast(err.message, 'error');
         btn.disabled = false;
-        btn.textContent = '✅ Finalize & Issue Prescription';
+        btn.textContent = '✅ Confirm & Issue Prescription';
     }
 };
 
@@ -421,65 +567,63 @@ window.requestPatientFeedback = async function (reportId) {
     }
 };
 
-// ── Research assistant ────────────────────────────────────────────────────
+// ── Research Assistant Chat ───────────────────────────────────────────────
 
-let researchFileToUpload = null;
+window.sendResearchMessage = async function (reportId) {
+    const input = document.getElementById(`research-input-${reportId}`);
+    const message = input.value.trim();
+    if (!message) return;
 
-window.handleResearchFileSelect = function (input) {
-    researchFileToUpload = input.files[0] || null;
-    document.getElementById('research-file-name').textContent =
-        researchFileToUpload ? researchFileToUpload.name : '';
-};
+    const chatDiv = document.getElementById(`research-chat-${reportId}`);
+    const sendBtn = document.getElementById(`research-send-btn-${reportId}`);
 
-window.queryResearch = async function (context) {
-    const input = document.getElementById('research-input');
-    const query = input.value.trim();
-    if (!query && !researchFileToUpload) { showToast('Enter a research question', 'error'); return; }
+    // Add doctor's message to chat
+    chatDiv.innerHTML += `
+        <div class="chat-bubble patient" style="margin-bottom:0.75rem">
+            <div class="bubble-label">You</div>
+            ${escapeHtml(message)}
+        </div>`;
+    
+    input.value = '';
+    input.disabled = true;
+    sendBtn.disabled = true;
 
-    const btn = document.getElementById('research-btn');
-    const responseDiv = document.getElementById('research-response');
-    btn.disabled = true;
-    btn.innerHTML = '<span class="spinner"></span>';
-    responseDiv.style.display = 'block';
-    responseDiv.textContent = 'Searching medical databases...';
-
-    let uploadedUrl = '';
-    if (researchFileToUpload) {
-        try {
-            const uploaded = await uploadFile(researchFileToUpload);
-            uploadedUrl = uploaded.url;
-            researchFileToUpload = null;
-            document.getElementById('research-file-name').textContent = '';
-        } catch (err) {
-            showToast('File upload failed: ' + err.message, 'error');
-        }
-    }
+    // Add typing indicator
+    chatDiv.innerHTML += `
+        <div class="typing-indicator" id="research-typing-${reportId}" style="margin-bottom:0.75rem">
+            <span></span><span></span><span></span>
+        </div>`;
+    chatDiv.scrollTop = chatDiv.scrollHeight;
 
     try {
-        const fullQuery = uploadedUrl
-            ? `${query || 'Analyze this image'} [Attachment: ${uploadedUrl}]`
-            : query;
-
-        const data = await apiFetch('/api/doctor/research', {
+        const data = await apiFetch(`/api/doctor/research/${reportId}`, {
             method: 'POST',
-            body: JSON.stringify({ query: fullQuery, context }),
+            body: JSON.stringify({ query: message }),
         });
 
-        responseDiv.innerHTML = '';
-        if (uploadedUrl) {
-            const isImage = /\.(png|jpg|jpeg|gif|webp)$/i.test(uploadedUrl);
-            if (isImage) {
-                responseDiv.innerHTML += `<img src="${uploadedUrl}" alt="uploaded" style="max-width:200px;border-radius:8px;margin-bottom:0.75rem;display:block">`;
-            }
-        }
-        responseDiv.innerHTML += data.response;
+        // Remove typing indicator
+        document.getElementById(`research-typing-${reportId}`)?.remove();
+
+        // Add AI response
+        chatDiv.innerHTML += `
+            <div class="chat-bubble assistant" style="margin-bottom:0.75rem">
+                <div class="bubble-label">AI Research Assistant</div>
+                ${data.response}
+            </div>`;
     } catch (err) {
-        responseDiv.textContent = 'Error: ' + err.message;
+        document.getElementById(`research-typing-${reportId}`)?.remove();
+        chatDiv.innerHTML += `
+            <div class="chat-bubble assistant" style="margin-bottom:0.75rem;border-color:var(--accent-rose)">
+                <div class="bubble-label">Error</div>
+                ${escapeHtml(err.message)}
+            </div>`;
         showToast(err.message, 'error');
     }
 
-    btn.disabled = false;
-    btn.textContent = '🔍 Search';
+    input.disabled = false;
+    sendBtn.disabled = false;
+    input.focus();
+    chatDiv.scrollTop = chatDiv.scrollHeight;
 };
 
 function renderAttachmentDoctor(url) {
