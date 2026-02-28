@@ -2,8 +2,8 @@
    SPA Router & Shared Utilities
    ══════════════════════════════════════════════════════════════════════════ */
 
-const API_BASE = '';  // same origin
-
+//window.API_BASE = 'https://cycq1wk7n3.execute-api.ap-south-1.amazonaws.com';  // same origin
+window.API_BASE = '';  // same origin
 // ── State ─────────────────────────────────────────────────────────────────
 
 function getToken() { return localStorage.getItem('token'); }
@@ -14,7 +14,7 @@ function getUser() {
     const u = localStorage.getItem('user');
     return u ? JSON.parse(u) : null;
 }
-function setUser(user) { localStorage.setItem('user', JSON.stringify(user)); }
+function setUser(user) { localStorage.setItem('user', JSON.stringify(user)); }  
 
 // ── API Fetch wrapper ─────────────────────────────────────────────────────
 

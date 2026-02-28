@@ -7,14 +7,20 @@ from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
+from fastapi import Request
+from fastapi.responses import Response
 
 from database import init_db
+from mangum import Mangum
 from routes.auth_routes import router as auth_router
 from routes.patient_routes import router as patient_router
 from routes.doctor_routes import router as doctor_router
 
 FRONTEND_DIR = os.path.join(os.path.dirname(__file__), "..", "frontend")
-UPLOADS_DIR = os.path.join(os.path.dirname(__file__), "uploads")
+IS_LAMBDA = bool(os.environ.get("AWS_LAMBDA_FUNCTION_NAME"))
+
+UPLOADS_DIR = "/tmp/uploads" if IS_LAMBDA else os.path.join(os.path.dirname(__file__), "uploads")
+# UPLOADS_DIR = os.path.join(os.path.dirname(__file__), "uploads")
 
 # Ensure uploads directory exists
 os.makedirs(UPLOADS_DIR, exist_ok=True)
@@ -39,13 +45,13 @@ app = FastAPI(
 )
 
 # CORS for local development
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# app.add_middleware(
+#     CORSMiddleware,
+#     allow_origins=["*"],
+#     allow_credentials=False,
+#     allow_methods=["*"],
+#     allow_headers=["*"],
+# )
 
 # Include API routers
 app.include_router(auth_router)
@@ -58,6 +64,12 @@ app.mount("/uploads", StaticFiles(directory=UPLOADS_DIR), name="uploads")
 # Serve frontend static files
 app.mount("/js", StaticFiles(directory=os.path.join(FRONTEND_DIR, "js")), name="js")
 app.mount("/static", StaticFiles(directory=FRONTEND_DIR), name="static")
+
+
+@app.options("/{full_path:path}")
+async def preflight_handler(full_path: str, request: Request):
+    # Return 204 so browsers accept the preflight
+    return Response(status_code=204)
 
 
 @app.post("/api/upload")
@@ -93,3 +105,6 @@ async def serve_frontend():
 async def serve_css():
     """Serve the main CSS file."""
     return FileResponse(os.path.join(FRONTEND_DIR, "index.css"))
+
+
+handler = Mangum(app)   

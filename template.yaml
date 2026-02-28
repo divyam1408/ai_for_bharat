@@ -1,0 +1,15 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+
+Resources:
+  FastApiFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: backend
+      Handler: main.handler
+      Runtime: python3.12
+      MemorySize: 2048
+      Timeout: 30
+      Events:
+        Api:
+          Type: HttpApi

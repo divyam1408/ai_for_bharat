@@ -8,7 +8,7 @@ async function uploadFile(file) {
     const formData = new FormData();
     formData.append('file', file);
     const token = getToken();
-    const res = await fetch('/api/upload', {
+    const res = await fetch(`${window.API_BASE}/api/upload`, {
         method: 'POST',
         headers: token ? { 'Authorization': `Bearer ${token}` } : {},
         body: formData,

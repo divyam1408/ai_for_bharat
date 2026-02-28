@@ -4,7 +4,10 @@ import aiosqlite
 import os
 from datetime import datetime
 
-DB_PATH = os.path.join(os.path.dirname(__file__), "healthcare.db")
+IS_LAMBDA = bool(os.environ.get("AWS_LAMBDA_FUNCTION_NAME"))
+
+LOCAL_DB_PATH = os.path.join(os.path.dirname(__file__), "healthcare.db")
+DB_PATH = "/tmp/healthcare.db" if IS_LAMBDA else LOCAL_DB_PATH   # or your local path
 
 
 async def get_db():

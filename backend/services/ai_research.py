@@ -5,27 +5,34 @@ from pathlib import Path
 from dotenv import load_dotenv
 import aisuite as ai
 
+from services.bedrock_client import BedrockClient
+from services.prompts import RESEARCH_SYSTEM_PROMPT
+
 # Load environment variables from .env file
 env_path = Path(__file__).parent.parent / '.env'
 load_dotenv(dotenv_path=env_path)
 
 # Initialize aisuite client
-client = ai.Client()
+bedrock_client = BedrockClient()
+fallback_client = ai.Client()
 
 # Hugging Face configuration
 HF_MODEL = "huggingface:Qwen/Qwen3-8B"
 
-SYSTEM_PROMPT_TEMPLATE = """You are an AI medical research assistant supporting a doctor in a rural 
-healthcare system in India. You have access to the complete patient case history.
+#BEDROCK_MODEL = "openai.gpt-oss-120b-1:0"
+BEDROCK_MODEL = "qwen.qwen3-next-80b-a3b"
 
-PATIENT CASE CONTEXT:
-{case_context}
+# SYSTEM_PROMPT_TEMPLATE = """You are an AI medical research assistant supporting a doctor in a rural 
+# healthcare system in India. You have access to the complete patient case history.
 
-YOUR ROLE:
-- Provide evidence-based medical research and guidance
-- Answer the doctor's questions about this specific case
-- Suggest differential diagnoses when relevant
-"""
+# PATIENT CASE CONTEXT:
+# {case_context}
+
+# YOUR ROLE:
+# - Provide evidence-based medical research and guidance
+# - Answer the doctor's questions about this specific case
+# - Suggest differential diagnoses when relevant
+# """
 
 
 async def research_chat(
@@ -54,7 +61,7 @@ async def research_chat(
     )
     
     # Build system prompt with case context
-    system_prompt = SYSTEM_PROMPT_TEMPLATE.format(case_context=case_context)
+    system_prompt = RESEARCH_SYSTEM_PROMPT.format(case_context=case_context)
     
     # Build conversation messages
     messages = [{"role": "system", "content": system_prompt}]
@@ -68,28 +75,24 @@ async def research_chat(
     user_prompt = f"""Reply to the following user message:
     {message}
     
-    INSTRUCTIONS FOR OUTPUT:
-    - Write in a professional clinical tone.
-    - Use proper newlines in response to seperate different headings.
-    - Do not use conversational phrases.
-    - Avoid bold text, markdown headers, or decorative formatting e.g **<heading>**.
-    - Keep the response concise and structured.
+    RESPONSE GUIDELINES:
+    - Match the tone of the doctor's message.
+    - If it is conversational, respond naturally.
+    - If it is clinical, respond with structured medical reasoning.
+    - Be concise.
+    - Avoid markdown formatting.
     """
     messages.append({"role": "user", "content": user_prompt})
     
-    if not os.environ.get("HUGGINGFACE_API_KEY", ""):
+    if not os.environ.get("AWS_ACCESS_KEY_ID"):
         return _demo_fallback(message, case_context)
     
     try:
-        response = client.chat.completions.create(
-            model=HF_MODEL,
-            messages=messages,
-            temperature=0.4,
-        )
-        
-        return response.choices[0].message.content.strip()
+        response = bedrock_client.research_chat(BEDROCK_MODEL, messages)
+        return response
     except Exception as e:
-        print(f"Hugging Face API error: {e}")
+        print(f"Bedrock Research error: {e}")
+        return _hf_fallback(messages, case_context)
         return _demo_fallback(message, case_context)
 
 
@@ -140,6 +143,21 @@ def _build_case_context(
     
     return "\n".join(context_parts)
 
+
+
+def _hf_fallback(messages: list[dict], case_context: str) -> str:
+
+    try:
+        response = client.chat.completions.create(
+            model=HF_MODEL,
+            messages=messages,
+            temperature=0.4,
+        )
+        
+        return response.choices[0].message.content.strip()
+    except Exception as e:
+        print(f"Hf Research error: {e}")
+        return _demo_fallback('', case_context)
 
 def _demo_fallback(message: str, case_context: str) -> str:
     """Provide a demo response with case context."""
