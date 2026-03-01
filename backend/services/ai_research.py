@@ -84,16 +84,12 @@ async def research_chat(
     """
     messages.append({"role": "user", "content": user_prompt})
     
-    if not os.environ.get("AWS_ACCESS_KEY_ID"):
-        return _demo_fallback(message, case_context)
-    
     try:
         response = bedrock_client.research_chat(BEDROCK_MODEL, messages)
         return response
     except Exception as e:
         print(f"Bedrock Research error: {e}")
         return _hf_fallback(messages, case_context)
-        return _demo_fallback(message, case_context)
 
 
 def _build_case_context(

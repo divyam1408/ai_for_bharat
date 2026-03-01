@@ -3,7 +3,8 @@
    ══════════════════════════════════════════════════════════════════════════ */
 
 //window.API_BASE = 'https://cycq1wk7n3.execute-api.ap-south-1.amazonaws.com';  // same origin
-window.API_BASE = '';  // same origin
+//window.API_BASE = '';  // same origin
+window.API_BASE = 'http://52.66.108.187:8000';
 // ── State ─────────────────────────────────────────────────────────────────
 
 function getToken() { return localStorage.getItem('token'); }

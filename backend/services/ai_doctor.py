@@ -152,12 +152,12 @@ async def generate_diagnosis_from_chat(
 Based on the full conversation above, provide your preliminary diagnosis as JSON.
 """
 
-    if not os.environ.get("HUGGINGFACE_API_KEY", "") or not os.environ.get("AWS_ACCESS_KEY_ID"):
-        # Extract symptoms from all patient messages for the fallback
-        all_symptoms = " ".join(
-            msg["content"] for msg in chat_history if msg["role"] == "patient"
-        )
-        return _diagnosis_demo_fallback(all_symptoms)
+    # if not os.environ.get("HUGGINGFACE_API_KEY", "") or not os.environ.get("AWS_ACCESS_KEY_ID"):
+    #     # Extract symptoms from all patient messages for the fallback
+    #     all_symptoms = " ".join(
+    #         msg["content"] for msg in chat_history if msg["role"] == "patient"
+    #     )
+    #     return _diagnosis_demo_fallback(all_symptoms)
 
     try:
         messages = [
