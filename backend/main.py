@@ -16,6 +16,7 @@ from routes.auth_routes import router as auth_router
 from routes.patient_routes import router as patient_router
 from routes.doctor_routes import router as doctor_router
 
+PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "").rstrip("/")
 FRONTEND_DIR = os.path.join(os.path.dirname(__file__), "..", "frontend")
 IS_LAMBDA = bool(os.environ.get("AWS_LAMBDA_FUNCTION_NAME"))
 
@@ -92,7 +93,8 @@ async def upload_file(file: UploadFile = File(...)):
     with open(file_path, "wb") as f:
         f.write(contents)
 
-    return {"url": f"/uploads/{unique_name}", "filename": file.filename}
+    file_url = f"{PUBLIC_BASE_URL}/uploads/{unique_name}" if PUBLIC_BASE_URL else f"/uploads/{unique_name}"
+    return {"url": file_url, "filename": file.filename}
 
 
 @app.get("/")
