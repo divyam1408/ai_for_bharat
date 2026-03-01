@@ -1,15 +1,33 @@
 import boto3
 import json
 from botocore.config import Config
-from services.prompts import CHAT_SYSTEM_PROMPT, DIAGNOSIS_SYSTEM_PROMPT
+from services.prompts import CHAT_SYSTEM_PROMPT, DIAGNOSIS_SYSTEM_PROMPT, RESEARCH_SYSTEM_PROMPT
 
 class BedrockClient:
     def __init__(self, region="ap-south-1"):
+        self.control_client = boto3.client(
+            service_name = "bedrock",
+            region_name=region,
+            config=Config(retries={"max_attempts": 3})
+        )
         self.client = boto3.client(
             service_name="bedrock-runtime",
             region_name=region,
             config=Config(retries={"max_attempts": 3})
         )
+
+    def _get_model_inference_profile(self, model_id: str) -> str:
+        """Get inference profile for a given model id."""
+        try:
+            resp = self.control_client.list_inference_profiles(typeEquals="SYSTEM_DEFINED")
+            for p in resp.get("inferenceProfileSummaries", []):
+                if model_id in p.get("inferenceProfileId"):
+                    break
+            model_id = p.get("inferenceProfileArn")
+            return model_id
+        except Exception as e:
+            print('INFERENCE PROFILE ERROR: ', e)
+            return model_id
 
     # ==========================
     # PUBLIC ENTRY POINT
@@ -20,7 +38,10 @@ class BedrockClient:
         Detects model family and routes to correct invocation method.
         """
 
-        if model_id.startswith("amazon.nova"):
+        if model_id.startswith("anthropic."):
+            return self._invoke_anthropic(model_id, chat_history, user_messgae)
+
+        elif model_id.startswith("amazon.nova"):
             return self._invoke_nova(model_id, chat_history, user_message)
 
         elif model_id.startswith("openai."):
@@ -29,10 +50,40 @@ class BedrockClient:
         elif model_id.startswith("qwen."):
             return self._invoke_qwen(model_id, chat_history, user_message)
 
+        elif model_id.startswith("deepseek."):
+            return self._invoke_deepseek(model_id, chat_history, user_message)
+
         else:
             raise ValueError(f"Unsupported model family for model_id: {model_id}")
 
 
+    # ==========================
+    # ANTHROPIC (BEDROCK HOSTED)
+    # ==========================
+    def _invoke_anthropic(self, model_id, chat_history, user_message):
+        model_id = self._get_model_inference_profile(model_id)
+        for msg in chat_history:
+            role = "user" if msg["role"] == "patient" else "assistant"
+            messages.append({"role": role, "content": msg["content"]})
+        
+        # Add the new message
+        messages.append({"role": "user", "content": user_message})
+        body = json.dumps({
+            "anthropic_version": "bedrock-2023-05-31",
+            "system": CHAT_SYSTEM_PROMPT,
+            "max_tokens": 800,
+            "messages": messages
+        })
+
+        response = self.client.invoke_model(
+            modelId=model_id,
+            body=body,
+            contentType="application/json",
+            accept="application/json"
+        )
+
+        data = json.loads(response["body"].read())
+        return data["content"][0]["text"]
 
     # ==========================
     # NOVA / QWEN STYLE MODELS
@@ -41,6 +92,9 @@ class BedrockClient:
         return self._invoke_messages_api(model_id, chat_history, user_message)
 
     def _invoke_qwen(self, model_id, chat_history, user_message):
+        return self._invoke_messages_api(model_id, chat_history, user_message)
+    
+    def _invoke_deepseek(self, model_id, chat_history, user_message):
         return self._invoke_messages_api(model_id, chat_history, user_message)
 
     # ==========================
@@ -107,129 +161,92 @@ class BedrockClient:
         data = json.loads(response["body"].read())
         print('AI RESPONSE:', data)
         return data["choices"][0]["message"]["content"]
+
+
     
-    def generate_diagnosis_report(self, model_id, messages: list[dict]) -> str:
-        body = json.dumps({
-            "messages":messages,
-            "inferenceConfig": {
-                "temperature": 0.3,
-            }
-        })
-        response = self.client.invoke_model(
-            modelId=model_id,
-            body=body,
-            contentType="application/json",
-            accept="application/json"
-        )
-        data = json.loads(response["body"].read())
-        return data["choices"][0]["message"]["content"]
+    def generate_diagnosis_report(self, model_id, transcript: str) -> str:
+
+        if model_id.startswith("anthropic."):
+            print('GET INFERENCE', model_id)
+            model_id = self._get_model_inference_profile(model_id)
+            body = json.dumps({
+                "anthropic_version": "bedrock-2023-05-31",
+                "max_tokens": 3000,
+                "system": DIAGNOSIS_SYSTEM_PROMPT,
+                "messages": [
+                    {"role": "user","content": transcript}
+                ]
+            })
+            response = self.client.invoke_model(
+                modelId=model_id,
+                body=body,
+                contentType="application/json",
+                accept="application/json"
+            )
+            data = json.loads(response["body"].read())
+            print('AI Generated Report:', data)
+            return data["content"][0]['text']
+        else:
+            messages = [
+                {"role": "system", "content": DIAGNOSIS_SYSTEM_PROMPT},
+                {"role": "user", "content": transcript}
+            ]   
+            body = json.dumps({
+                "messages":messages,
+                "inferenceConfig": {
+                    "temperature": 0.3,
+                }
+            })
+            response = self.client.invoke_model(
+                modelId=model_id,
+                body=body,
+                contentType="application/json",
+                accept="application/json"
+            )
+            data = json.loads(response["body"].read())
+            print('AI Generated Report:', data)
+            return data["choices"][0]["message"]["content"]
     
-    def research_chat(self, model_id, messages: list[dict]) -> str:
-        body = json.dumps({
-            "messages":messages,
-            "inferenceConfig": {
-                "temperature": 0.4,
-            }
-        })
-        response = self.client.invoke_model(
-            modelId=model_id,
-            body=body,
-            contentType="application/json",
-            accept="application/json"
-        )
-        data = json.loads(response["body"].read())
-        return data["choices"][0]["message"]["content"]
 
+    def research_chat(self, model_id, case_context: str, messages: list[dict]) -> str:
 
-# class BedrockClient:
-#     def __init__(self, region="ap-south-1"):
-#         self.client = boto3.client(
-#             service_name="bedrock-runtime",
-#             region_name=region,
-#             config=Config(retries={"max_attempts": 3})
-#         )
+        system_prompt = RESEARCH_SYSTEM_PROMPT.format(case_context=case_context)
 
-#     def invoke_claude(self, prompt: str):
-#         body = json.dumps({
-#             "anthropic_version": "bedrock-2023-05-31",
-#             "max_tokens": 500,
-#             "messages": [
-#                 {
-#                     "role": "user",
-#                     "content": prompt
-#                 }
-#             ]
-#         })
+        if model_id.startswith("anthropic."):
+            print('GET INFERENCE', model_id)
+            model_id = self._get_model_inference_profile(model_id)
+            body = json.dumps({
+                "anthropic_version": "bedrock-2023-05-31",
+                "max_tokens": 800,
+                "system": system_prompt,
+                "messages": messages,
+            })
+            response = self.client.invoke_model(
+                modelId=model_id,
+                body=body,
+                contentType="application/json",
+                accept="application/json"
+            )
+            data = json.loads(response["body"].read())
+            print('Research AI:', data)
+            return data["content"][0]['text']
+        else:
+            messages = [{'role':'system','content':system_prompt}] + messages
+            body = json.dumps({
+                "messages":messages,
+                "inferenceConfig": {
+                    "temperature": 0.4,
+                }
+            })
+            response = self.client.invoke_model(
+                modelId=model_id,
+                body=body,
+                contentType="application/json",
+                accept="application/json"
+            )
+            data = json.loads(response["body"].read())
+            print('Research AI:', data)
+            return data["choices"][0]["message"]["content"]
 
-#         response = self.client.invoke_model(
-#             modelId="anthropic.claude-3-sonnet-20240229-v1:0",
-#             body=body,
-#             contentType="application/json",
-#             accept="application/json"
-#         )
-
-#         response_body = json.loads(response["body"].read())
-#         return response_body["content"][0]["text"]
-
-#     def invoke_qwen(self, chat_history, model: str, max_tokens: int = 800, temperature: float = 0.3, ):
-#         body = json.dumps({
-#             "messages": [
-#                 {
-#                     "role": "user",
-#                     "content": [
-#                         {
-#                             "type": "text",
-#                             "text": prompt
-#                         }
-#                     ]
-#                 }
-#             ],
-#             "inferenceConfig": {
-#                 "maxTokens": 800,
-#                 "temperature": 0.3,   # lower = more clinical consistency
-#                 "topP": 0.9
-#             }
-#         })
-
-#         response = self.client.invoke_model(
-#             modelId="qwen.qwen3-next-80b-a3b",
-#             body=body,
-#             contentType="application/json",
-#             accept="application/json"
-#         )
-
-#         response_body = json.loads(response["body"].read())
-
-#         return response_body["output"]["message"]["content"][0]["text"]
-
-#     def invoke_openai(self, messages, model: str, temperature: int = 0.5, top_p: int = 0.9, max_tokens: int = 500):
-#         body = json.dumps({
-#             # "messages": [
-#             #     {
-#             #         "role": "user",
-#             #         "content": prompt
-#             #     }
-#             # ],
-#             "messages": messages,
-#             "max_tokens": max_tokens,
-#             "temperature": temperature,
-#             "top_p": top_p
-#         })
-
-#         response = self.client.invoke_model(
-#             modelId=model,
-#             body=body,
-#             contentType="application/json",
-#             accept="application/json"
-#         )
-
-#         response_body = json.loads(response["body"].read())
-
-#         return self.parse_model_response(response_body["choices"][0]["message"]["content"].strip())
-
-#     def parse_model_response(self, response: str) -> str:
-#         if "</reasoning>" in response:
-#             response = response.split('</reasoning>')[-1]
-#         return response
 
 

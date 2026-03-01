@@ -159,6 +159,9 @@ class BedrockClient:
         elif model_id.startswith("qwen."):
             return self._invoke_qwen(model_id, prompt)
 
+        elif model_id.startswith("deepseek."):
+            return self._invoke_deepseek(model_id, prompt)
+
         else:
             raise ValueError(f"Unsupported model family for model_id: {model_id}")
 
@@ -168,6 +171,7 @@ class BedrockClient:
     def _invoke_anthropic(self, model_id, prompt):
         body = json.dumps({
             "anthropic_version": "bedrock-2023-05-31",
+            "system": "Answer the query.",
             "max_tokens": 800,
             "messages": [
                 {
@@ -178,7 +182,7 @@ class BedrockClient:
         })
 
         response = self.client.invoke_model(
-            modelId=model_id,
+            modelId="arn:aws:bedrock:ap-south-1:508865364558:inference-profile/global.anthropic.claude-opus-4-5-20251101-v1:0",
             body=body,
             contentType="application/json",
             accept="application/json"
@@ -218,6 +222,9 @@ class BedrockClient:
 
     def _invoke_qwen(self, model_id, prompt):
         return self._invoke_messages_api(model_id, prompt)
+    
+    def _invoke_deepseek(self, model_id, prompt):
+        return self._invoke_messages_api(model_id, prompt)
 
     # ==========================
     # OPENAI (BEDROCK HOSTED)
@@ -250,17 +257,13 @@ class BedrockClient:
     # (Nova, Qwen, etc.)
     # ==========================
     def _invoke_messages_api(self, model_id, prompt):
+        messages = [{"role": "system", "content":"Answer the query."}]
         body = json.dumps({
             "messages": [
+                {"role": "system", "content":"Answer the query."},
                 {
                     "role": "user",
                     "content": prompt
-                    # "content": [
-                    #     {
-                    #         "type": "text",
-                    #         "text": prompt
-                    #     }
-                    # ]
                 }
             ],
             "inferenceConfig": {
@@ -282,7 +285,7 @@ class BedrockClient:
 
 
 llm = BedrockClient()
-print(llm.generate("qwen.qwen3-next-80b-a3b", "What can you tell me about boat brand."))
+print(llm.generate("anthropic.claude-opus-4-5-20251101-v1:0", "mujhe sar me bahut dard ho raha hai , mai kya karu?"))
 
 # def generate_research_summary():
 #     prompt = f"""
@@ -291,3 +294,14 @@ print(llm.generate("qwen.qwen3-next-80b-a3b", "What can you tell me about boat b
 #     return response
 
 # print(generate_research_summary())
+
+
+
+# import boto3
+
+# bedrock = boto3.client("bedrock", region_name="ap-south-1", config=Config(retries={"max_attempts": 3}))
+# print(dir(bedrock))
+
+# resp = bedrock.list_inference_profiles(typeEquals="SYSTEM_DEFINED")
+# for p in resp.get("inferenceProfileSummaries", []):
+#     print(p.get("inferenceProfileId"), p.get("inferenceProfileArn"))

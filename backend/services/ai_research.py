@@ -20,20 +20,8 @@ fallback_client = ai.Client()
 HF_MODEL = "huggingface:Qwen/Qwen3-8B"
 
 #BEDROCK_MODEL = "openai.gpt-oss-120b-1:0"
-BEDROCK_MODEL = "qwen.qwen3-next-80b-a3b"
-
-# SYSTEM_PROMPT_TEMPLATE = """You are an AI medical research assistant supporting a doctor in a rural 
-# healthcare system in India. You have access to the complete patient case history.
-
-# PATIENT CASE CONTEXT:
-# {case_context}
-
-# YOUR ROLE:
-# - Provide evidence-based medical research and guidance
-# - Answer the doctor's questions about this specific case
-# - Suggest differential diagnoses when relevant
-# """
-
+#BEDROCK_RESEARCH_MODEL = "qwen.qwen3-next-80b-a3b"
+BEDROCK_RESEARCH_MODEL = "anthropic.claude-opus-4-5-20251101-v1:0"
 
 async def research_chat(
     message: str,
@@ -60,11 +48,7 @@ async def research_chat(
         diagnosis_info
     )
     
-    # Build system prompt with case context
-    system_prompt = RESEARCH_SYSTEM_PROMPT.format(case_context=case_context)
-    
-    # Build conversation messages
-    messages = [{"role": "system", "content": system_prompt}]
+    messages = []
     
     # Add previous research chat history
     for msg in chat_history:
@@ -72,7 +56,7 @@ async def research_chat(
         messages.append({"role": role, "content": msg["content"]})
     
     # Add current message
-    user_prompt = f"""Reply to the following user message:
+    user_prompt = f"""Reply to the following Docto message:
     {message}
     
     RESPONSE GUIDELINES:
@@ -85,10 +69,11 @@ async def research_chat(
     messages.append({"role": "user", "content": user_prompt})
     
     try:
-        response = bedrock_client.research_chat(BEDROCK_MODEL, messages)
+        response = bedrock_client.research_chat(BEDROCK_RESEARCH_MODEL, case_context, messages)
         return response
     except Exception as e:
         print(f"Bedrock Research error: {e}")
+        raise e
         return _hf_fallback(messages, case_context)
 
 
@@ -143,8 +128,10 @@ def _build_case_context(
 
 def _hf_fallback(messages: list[dict], case_context: str) -> str:
 
+    system_prompt = RESEARCH_SYSTEM_PROMPT.format(case_context=case_context)
+    messages = [{"role": "system", "content": system_prompt }] + messages
     try:
-        response = client.chat.completions.create(
+        response = fallback_client.chat.completions.create(
             model=HF_MODEL,
             messages=messages,
             temperature=0.4,
