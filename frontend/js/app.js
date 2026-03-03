@@ -43,6 +43,61 @@ function showToast(message, type = 'info') {
     setTimeout(() => toast.remove(), 3000);
 }
 
+// ── Markdown Renderer ─────────────────────────────────────────────────────
+// Lightweight markdown → HTML converter for AI assistant messages.
+// HTML is escaped first to prevent XSS, then patterns are applied.
+
+function renderMarkdown(text) {
+    if (!text) return '';
+
+    // 1. Escape HTML to prevent XSS
+    let html = text
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+
+    // 2. Fenced code blocks (``` ... ```)
+    html = html.replace(/```[\w]*\n?([\s\S]*?)```/g, (_, code) =>
+        `<pre class="md-code-block"><code>${code.trim()}</code></pre>`
+    );
+
+    // 3. Inline code
+    html = html.replace(/`([^`\n]+)`/g, '<code class="md-code">$1</code>');
+
+    // 4. Bold (**text**)
+    html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+
+    // 5. Italic (*text*) — single asterisks only
+    html = html.replace(/(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)/g, '<em>$1</em>');
+
+    // 6. Headings — rendered as bold inline labels, not large h-tags
+    html = html.replace(/^###\s+(.+)$/gm, '<span class="md-h3">$1</span>');
+    html = html.replace(/^##\s+(.+)$/gm,  '<span class="md-h2">$1</span>');
+    html = html.replace(/^#\s+(.+)$/gm,   '<span class="md-h1">$1</span>');
+
+    // 7. Bullet lists (- item or * item) — group consecutive lines into <ul>
+    html = html.replace(/((?:^[-*]\s.+\n?)+)/gm, block => {
+        const items = block.trim().split('\n')
+            .map(line => `<li>${line.replace(/^[-*]\s/, '')}</li>`)
+            .join('');
+        return `<ul class="md-list">${items}</ul>`;
+    });
+
+    // 8. Numbered lists (1. item) — group consecutive lines into <ol>
+    html = html.replace(/((?:^\d+\.\s.+\n?)+)/gm, block => {
+        const items = block.trim().split('\n')
+            .map(line => `<li>${line.replace(/^\d+\.\s/, '')}</li>`)
+            .join('');
+        return `<ol class="md-list">${items}</ol>`;
+    });
+
+    // 9. Remaining newlines → <br> (skip lines already in block elements)
+    html = html.replace(/\n(?!<(?:ul|ol|li|pre|\/ul|\/ol|\/pre))/g, '<br>');
+
+    return html;
+}
+
 // ── Router ────────────────────────────────────────────────────────────────
 
 const routes = {};

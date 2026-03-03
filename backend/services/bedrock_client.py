@@ -39,7 +39,7 @@ class BedrockClient:
         """
 
         if model_id.startswith("anthropic."):
-            return self._invoke_anthropic(model_id, chat_history, user_messgae)
+            return self._invoke_anthropic(model_id, chat_history, user_message)
 
         elif model_id.startswith("amazon.nova"):
             return self._invoke_nova(model_id, chat_history, user_message)
@@ -62,6 +62,7 @@ class BedrockClient:
     # ==========================
     def _invoke_anthropic(self, model_id, chat_history, user_message):
         model_id = self._get_model_inference_profile(model_id)
+        messages = []
         for msg in chat_history:
             role = "user" if msg["role"] == "patient" else "assistant"
             messages.append({"role": role, "content": msg["content"]})
@@ -83,6 +84,7 @@ class BedrockClient:
         )
 
         data = json.loads(response["body"].read())
+        print('AI RESPONSE:', data)
         return data["content"][0]["text"]
 
     # ==========================

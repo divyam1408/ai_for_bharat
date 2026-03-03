@@ -358,14 +358,12 @@ registerRoute('/doctor/review/:id', async (app, params) => {
                                     💊 Prescription Template
                                 </h4>
                                 <div class="form-group">
-                                    <label class="form-label">Prescribed Medications</label>
-                                    <textarea class="form-textarea" id="review-meds" rows="3"
-                                              placeholder="e.g. Paracetamol 500mg, Amoxicillin 250mg..."></textarea>
-                                </div>
-                                <div class="form-group">
-                                    <label class="form-label">Dosage Instructions</label>
-                                    <textarea class="form-textarea" id="review-dosage" rows="2"
-                                              placeholder="e.g. Take Paracetamol twice daily after meals..."></textarea>
+                                    <label class="form-label">Medications & Dosage</label>
+                                    <div id="med-rows"></div>
+                                    <button type="button" class="btn btn-secondary btn-sm"
+                                            style="margin-top:0.5rem" onclick="addMedicineRow()">
+                                        + Add Medicine
+                                    </button>
                                 </div>
                                 <div class="form-group">
                                     <label class="form-label">Follow-up Date</label>
@@ -470,20 +468,69 @@ registerRoute('/doctor/review/:id', async (app, params) => {
     }
 });
 
+// ── Medication Rows ───────────────────────────────────────────────────────
+
+let _medRowCounter = 0;
+
+window.addMedicineRow = function () {
+    const id = `med-row-${_medRowCounter++}`;
+    const row = document.createElement('div');
+    row.className = 'med-row';
+    row.id = id;
+    row.innerHTML = `
+        <input type="text" class="form-input med-name"
+               placeholder="Medicine & strength (e.g. Paracetamol 500mg)">
+        <input type="text" class="form-input med-dosage"
+               placeholder="Dosage (e.g. Twice daily after meals)">
+        <button type="button" class="btn-remove-med" onclick="removeMedicineRow('${id}')"
+                title="Remove">×</button>`;
+    document.getElementById('med-rows').appendChild(row);
+};
+
+window.removeMedicineRow = function (rowId) {
+    if (document.querySelectorAll('.med-row').length <= 1) {
+        showToast('At least one medication row is required', 'info');
+        return;
+    }
+    document.getElementById(rowId)?.remove();
+};
+
+function _collectMedNames() {
+    return Array.from(document.querySelectorAll('.med-row .med-name'))
+        .map(i => i.value.trim()).filter(Boolean).join('; ');
+}
+
+function _collectMedDosages() {
+    return Array.from(document.querySelectorAll('.med-row'))
+        .map(row => {
+            const name   = row.querySelector('.med-name').value.trim();
+            const dosage = row.querySelector('.med-dosage').value.trim();
+            if (!name) return null;
+            return dosage ? `${name} — ${dosage}` : name;
+        })
+        .filter(Boolean).join('; ');
+}
+
 // ── Show/Hide Prescription Form ───────────────────────────────────────────
 
 window.showPrescriptionForm = function (reportId) {
     // Copy diagnosis and comments from initial view to prescription form
     const diagnosis = document.getElementById('review-diagnosis').value;
     const comments = document.getElementById('review-comments').value;
-    
+
     document.getElementById('prescription-diagnosis').value = diagnosis;
     document.getElementById('prescription-comments').value = comments;
-    
+
+    // Initialize medication rows with one empty row
+    const medRows = document.getElementById('med-rows');
+    medRows.innerHTML = '';
+    _medRowCounter = 0;
+    addMedicineRow();
+
     // Hide initial view, show prescription form
     document.getElementById('initial-review-view').style.display = 'none';
     document.getElementById('prescription-form').style.display = 'block';
-    
+
     // Update card title
     document.querySelector('#review-card .card-title').textContent = '💊 Issue Prescription';
 };
@@ -519,8 +566,8 @@ window.finalizeDiagnosis = async function (reportId) {
                 doctor_comments: document.getElementById('prescription-comments').value.trim(),
                 modified: diagnosis !== document.getElementById('prescription-diagnosis').defaultValue,
                 is_final: true,
-                prescribed_medications: document.getElementById('review-meds').value.trim(),
-                dosage_instructions: document.getElementById('review-dosage').value.trim(),
+                prescribed_medications: _collectMedNames(),
+                dosage_instructions: _collectMedDosages(),
                 follow_up_date: document.getElementById('review-followup').value.trim(),
                 diet_lifestyle: document.getElementById('review-diet').value.trim(),
                 additional_instructions: document.getElementById('review-instructions').value.trim(),
@@ -608,7 +655,7 @@ window.sendResearchMessage = async function (reportId) {
         chatDiv.innerHTML += `
             <div class="chat-bubble assistant" style="margin-bottom:0.75rem">
                 <div class="bubble-label">AI Research Assistant</div>
-                ${data.response}
+                ${renderMarkdown(data.response)}
             </div>`;
     } catch (err) {
         document.getElementById(`research-typing-${reportId}`)?.remove();

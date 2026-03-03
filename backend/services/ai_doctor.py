@@ -23,7 +23,8 @@ HF_MODEL = "huggingface:Qwen/Qwen3-8B"
 
 #BEDROCK_MODEL = "openai.gpt-oss-120b-1:0"
 #BEDROCK_MODEL = "qwen.qwen3-next-80b-a3b"
-BEDROCK_CHAT_MODEL = "deepseek.v3.2"
+#BEDROCK_CHAT_MODEL = "deepseek.v3.2"
+BEDROCK_CHAT_MODEL = "anthropic.claude-opus-4-5-20251101-v1:0"
 BEDROCK_REPORT_MODEL = "anthropic.claude-opus-4-5-20251101-v1:0"
 
 
@@ -204,6 +205,3 @@ def _diagnosis_demo_fallback(symptoms: str) -> dict:
                            "A physical examination and basic diagnostic tests are recommended "
                            "to narrow down the diagnosis.",
         }
-
-
-generate_diagnosis_from_chat([{}])

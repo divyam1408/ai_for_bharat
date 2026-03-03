@@ -587,6 +587,10 @@ registerRoute('/patient/chatroom/:id', async (app, params) => {
                 <input type="file" id="chat-file" accept="image/*,.pdf" style="display:none"
                        onchange="handleChatFileSelect(this)">
             </label>
+            <button class="btn-lang" id="lang-btn" onclick="toggleMicLang()" title="Switch language: English / हिंदी">EN</button>
+            <button class="btn-mic" id="mic-btn" title="Click to record voice" onclick="toggleMicRecording()">
+                🎤
+            </button>
             <input type="text" class="form-input" id="chat-input"
                    placeholder="Describe your symptoms..." autocomplete="off">
             <button class="btn btn-primary" id="send-btn" onclick="sendChatMessage(${reportId})">
@@ -611,6 +615,75 @@ registerRoute('/patient/chatroom/:id', async (app, params) => {
 });
 
 let chatFileToUpload = null;
+
+// ── Speech-to-Text (Web Speech API) ──────────────────────────────────────
+let _micLang = 'en-IN';
+let _recognition = null;
+
+window.toggleMicLang = function () {
+    _micLang = _micLang === 'en-IN' ? 'hi-IN' : 'en-IN';
+    const langBtn = document.getElementById('lang-btn');
+    if (langBtn) langBtn.textContent = _micLang === 'en-IN' ? 'EN' : 'हि';
+    showToast(_micLang === 'en-IN' ? 'Switched to English' : 'हिंदी में बदला', 'info');
+};
+
+window.toggleMicRecording = function () {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+        showToast('Voice input not supported in this browser. Please use Chrome or Edge.', 'error');
+        return;
+    }
+
+    const micBtn = document.getElementById('mic-btn');
+
+    // If already listening — stop
+    if (_recognition) {
+        _recognition.stop();
+        return;
+    }
+
+    _recognition = new SpeechRecognition();
+    _recognition.lang = _micLang;
+    _recognition.continuous = false;
+    _recognition.interimResults = false;
+
+    _recognition.onstart = () => {
+        micBtn.classList.add('btn-mic--recording');
+        micBtn.title = 'Click to stop';
+        showToast(_micLang === 'hi-IN' ? 'सुन रहा है… रोकने के लिए फिर क्लिक करें' : 'Listening… click mic to stop', 'info');
+    };
+
+    _recognition.onresult = (event) => {
+        const transcript = event.results[0][0].transcript.trim();
+        const input = document.getElementById('chat-input');
+        if (transcript) {
+            const existing = input.value.trim();
+            input.value = existing ? existing + ' ' + transcript : transcript;
+            input.focus();
+            showToast('Voice converted to text ✓', 'success');
+        }
+    };
+
+    _recognition.onerror = (event) => {
+        if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+            showToast('Microphone permission denied. Please allow mic access in browser settings.', 'error');
+        } else if (event.error === 'no-speech') {
+            showToast('No speech detected. Please try again.', 'info');
+        } else if (event.error === 'network') {
+            showToast('Network error during voice recognition. Check your connection.', 'error');
+        } else {
+            showToast('Voice input error: ' + event.error, 'error');
+        }
+    };
+
+    _recognition.onend = () => {
+        micBtn.classList.remove('btn-mic--recording');
+        micBtn.title = 'Click to record voice';
+        _recognition = null;
+    };
+
+    _recognition.start();
+};
 
 window.handleChatFileSelect = function (input) {
     chatFileToUpload = input.files[0] || null;
@@ -666,7 +739,7 @@ window.sendChatMessage = async function (reportId) {
         messagesDiv.innerHTML += `
             <div class="chat-bubble assistant">
                 <div class="bubble-label">AI Assistant</div>
-                ${escapeHtml(data.reply)}
+                ${renderMarkdown(data.reply)}
             </div>`;
     } catch (err) {
         document.getElementById('typing')?.remove();
