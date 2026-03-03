@@ -1,8 +1,45 @@
 """Patient routes — chat-based diagnosis, feedback responses, and report viewing."""
 
+import base64
+import mimetypes
+import os
 from fastapi import APIRouter, Depends, HTTPException
 from models import StartChat, ChatMessage, DiagnosisResponse, PatientFeedbackResponse
 from auth import get_current_user
+
+_IS_LAMBDA = bool(os.environ.get("AWS_LAMBDA_FUNCTION_NAME"))
+_UPLOADS_DIR = "/tmp/uploads" if _IS_LAMBDA else os.path.join(os.path.dirname(__file__), "..", "uploads")
+
+
+def _image_from_attachment(attachment_url: str | None) -> tuple[str | None, str | None]:
+    """
+    Read an uploaded image file from disk and return (base64_data, media_type).
+    Returns (None, None) for missing URLs, non-existent files, or non-image types
+    (e.g. PDFs — Claude Vision only supports images).
+    """
+    if not attachment_url:
+        return None, None
+
+    # Extract filename whether URL is absolute (http://host/uploads/f) or relative (/uploads/f)
+    if "/uploads/" not in attachment_url:
+        return None, None
+    filename = attachment_url.rsplit("/uploads/", 1)[-1]
+    file_path = os.path.join(_UPLOADS_DIR, filename)
+
+    if not os.path.exists(file_path):
+        print(f"[image] Attachment file not found: {file_path}")
+        return None, None
+
+    media_type, _ = mimetypes.guess_type(file_path)
+    if not media_type or not media_type.startswith("image/"):
+        print(f"[image] Skipping non-image attachment: {media_type}")
+        return None, None
+
+    with open(file_path, "rb") as f:
+        b64 = base64.b64encode(f.read()).decode("utf-8")
+
+    print(f"[image] Loaded attachment: {filename} ({media_type}, {len(b64)} b64 chars)")
+    return b64, media_type
 from database import (
     create_chat_session,
     save_chat_message,
@@ -58,10 +95,15 @@ async def send_chat_message(
     # Get full history for context
     history = await get_chat_history(report_id)
 
+    # Read image attachment if present (base64 + media type for Claude Vision)
+    image_b64, image_media_type = _image_from_attachment(data.attachment_url)
+
     # Get AI response
     ai_reply = await chat_response(
         message=data.message,
         chat_history=history[:-1],  # exclude the message we just saved (it's the current one)
+        image_b64=image_b64,
+        image_media_type=image_media_type,
     )
 
     # Save AI response

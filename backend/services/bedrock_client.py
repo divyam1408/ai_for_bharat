@@ -32,14 +32,23 @@ class BedrockClient:
     # ==========================
     # PUBLIC ENTRY POINT
     # ==========================
-    def generate(self, model_id: str, chat_history: list[dict], user_message: str):
+    def generate(
+        self,
+        model_id: str,
+        chat_history: list[dict],
+        user_message: str,
+        image_b64: str | None = None,
+        image_media_type: str | None = None,
+    ):
         """
         Main orchestration function.
         Detects model family and routes to correct invocation method.
+        Image params are forwarded to Anthropic (Claude Vision); other model
+        families receive text only as they may not support vision via Bedrock.
         """
 
         if model_id.startswith("anthropic."):
-            return self._invoke_anthropic(model_id, chat_history, user_message)
+            return self._invoke_anthropic(model_id, chat_history, user_message, image_b64, image_media_type)
 
         elif model_id.startswith("amazon.nova"):
             return self._invoke_nova(model_id, chat_history, user_message)
@@ -60,15 +69,31 @@ class BedrockClient:
     # ==========================
     # ANTHROPIC (BEDROCK HOSTED)
     # ==========================
-    def _invoke_anthropic(self, model_id, chat_history, user_message):
+    def _invoke_anthropic(self, model_id, chat_history, user_message, image_b64=None, image_media_type=None):
         model_id = self._get_model_inference_profile(model_id)
         messages = []
         for msg in chat_history:
             role = "user" if msg["role"] == "patient" else "assistant"
             messages.append({"role": role, "content": msg["content"]})
-        
-        # Add the new message
-        messages.append({"role": "user", "content": user_message})
+
+        # Build current user content — multimodal if an image was attached
+        if image_b64 and image_media_type:
+            print(f"[bedrock] Sending multimodal message with image ({image_media_type})")
+            user_content = [
+                {
+                    "type": "image",
+                    "source": {
+                        "type": "base64",
+                        "media_type": image_media_type,
+                        "data": image_b64,
+                    },
+                },
+                {"type": "text", "text": user_message},
+            ]
+        else:
+            user_content = user_message
+
+        messages.append({"role": "user", "content": user_content})
         body = json.dumps({
             "anthropic_version": "bedrock-2023-05-31",
             "system": CHAT_SYSTEM_PROMPT,

@@ -34,11 +34,16 @@ async def chat_response(
     message: str,
     chat_history: list[dict],
     patient_info: dict | None = None,
+    image_b64: str | None = None,
+    image_media_type: str | None = None,
 ) -> str:
     """Generate a conversational response to gather more symptom info."""
 
     try:
-        response = bedrock_client.generate(BEDROCK_CHAT_MODEL, chat_history, message)
+        response = bedrock_client.generate(
+            BEDROCK_CHAT_MODEL, chat_history, message,
+            image_b64=image_b64, image_media_type=image_media_type,
+        )
         return response
     except Exception as e:
         print(f"Bedrock chat error: {e}")
