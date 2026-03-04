@@ -350,8 +350,9 @@ registerRoute('/patient/report/:id', async (app, params) => {
                 <div style="display:flex;gap:0.75rem;align-items:center;flex-wrap:wrap">
                     <label class="btn btn-secondary btn-sm" style="cursor:pointer">
                         📎 Attach Image
-                        <input type="file" id="feedback-file" accept="image/*,.pdf" style="display:none"
-                               onchange="handleFeedbackFileSelect(this)">
+                        <input type="file" id="feedback-file"
+                               accept=".jpg,.jpeg,.png,.gif,.webp,.pdf,.doc,.docx"
+                               style="display:none" onchange="handleFeedbackFileSelect(this)">
                     </label>
                     <button class="btn-mic" id="feedback-mic-btn" title="Record your response by voice"
                             onclick="toggleFeedbackMic('${r.preferred_language || 'English'}')">🎤</button>
@@ -508,9 +509,16 @@ window.toggleFeedbackMic = function (preferredLangName) {
 };
 
 window.handleFeedbackFileSelect = function (input) {
-    feedbackFileToUpload = input.files[0] || null;
-    document.getElementById('feedback-file-name').textContent =
-        feedbackFileToUpload ? feedbackFileToUpload.name : '';
+    const file = input.files[0] || null;
+    if (file && !_validateFileExt(file)) {
+        showToast(`Unsupported file type. Allowed: jpg, png, gif, webp, pdf, doc, docx`, 'error');
+        input.value = '';
+        feedbackFileToUpload = null;
+        document.getElementById('feedback-file-name').textContent = '';
+        return;
+    }
+    feedbackFileToUpload = file;
+    document.getElementById('feedback-file-name').textContent = file ? file.name : '';
 };
 
 window.sendPatientResponse = async function (reportId) {
@@ -532,6 +540,8 @@ window.sendPatientResponse = async function (reportId) {
             method: 'POST',
             body: JSON.stringify({ message, attachment_url: attachmentUrl }),
         });
+        btn.disabled = false;
+        btn.textContent = 'Send Response';
         showToast('Response sent to doctor!', 'success');
         navigate(`/patient/report/${reportId}`);
     } catch (err) {
@@ -782,8 +792,9 @@ registerRoute('/patient/chatroom/:id', async (app, params) => {
         <div class="chat-input-area" id="chat-input-area">
             <label class="btn btn-secondary btn-sm" style="cursor:pointer;flex-shrink:0">
                 📎
-                <input type="file" id="chat-file" accept="image/*,.pdf" style="display:none"
-                       onchange="handleChatFileSelect(this)">
+                <input type="file" id="chat-file"
+                       accept=".jpg,.jpeg,.png,.gif,.webp,.pdf,.doc,.docx"
+                       style="display:none" onchange="handleChatFileSelect(this)">
             </label>
             <button class="btn-lang" id="lang-btn" onclick="toggleMicLang()" title="Switch language: English / हिंदी">EN</button>
             <button class="btn-mic" id="mic-btn" title="Click to record voice" onclick="toggleMicRecording()">
@@ -989,8 +1000,23 @@ window.discardVoiceRecording = function () {
     if (input) { input.value = ''; input.focus(); }
 };
 
+const _ALLOWED_EXTS = new Set(['.jpg', '.jpeg', '.png', '.gif', '.webp', '.pdf', '.doc', '.docx']);
+
+function _validateFileExt(file) {
+    if (!file) return true;
+    const ext = '.' + file.name.split('.').pop().toLowerCase();
+    return _ALLOWED_EXTS.has(ext);
+}
+
 window.handleChatFileSelect = function (input) {
-    chatFileToUpload = input.files[0] || null;
+    const file = input.files[0] || null;
+    if (file && !_validateFileExt(file)) {
+        showToast(`Unsupported file type. Allowed: jpg, png, gif, webp, pdf, doc, docx`, 'error');
+        input.value = '';
+        chatFileToUpload = null;
+        return;
+    }
+    chatFileToUpload = file;
     if (chatFileToUpload) showToast(`📎 ${chatFileToUpload.name} attached`, 'info');
 };
 

@@ -418,6 +418,10 @@ registerRoute('/doctor/review/:id', async (app, params) => {
                             <div class="diagnosis-field-label">Doctor's Notes</div>
                             <div class="diagnosis-field-value">${r.doctor_comments}</div>
                         </div>` : ''}
+                        <button class="btn btn-primary" style="width:100%;margin-top:1.25rem"
+                                onclick="printPrescriptionDoctor(${r.id})">
+                            📥 Download Prescription
+                        </button>
                     </div>`}
 
                     <!-- AI Research Assistant - Chat Interface -->
@@ -685,3 +689,134 @@ function renderAttachmentDoctor(url) {
     const filename = url.split('/').pop();
     return `<div class="attachment-preview"><a href="${url}" target="_blank" class="attachment-link">📎 ${filename}</a></div>`;
 }
+
+// ── Doctor Prescription Download ──────────────────────────────────────────
+
+window.printPrescriptionDoctor = async function (reportId) {
+    try {
+        const r = await apiFetch(`/api/doctor/report/${reportId}`);
+        const date = new Date(r.review_date || r.created_at).toLocaleDateString('en-IN', {
+            day: 'numeric', month: 'long', year: 'numeric'
+        });
+
+        const printWindow = window.open('', '_blank');
+        printWindow.document.write(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Prescription — Report #${r.id}</title>
+            <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+            <style>
+                * { margin: 0; padding: 0; box-sizing: border-box; }
+                body { font-family: 'Inter', sans-serif; padding: 40px; color: #1a1a2e; line-height: 1.6; }
+                .rx-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 3px solid #3b82f6; padding-bottom: 16px; margin-bottom: 24px; }
+                .rx-header h1 { font-size: 22px; color: #3b82f6; }
+                .rx-header .meta { text-align: right; font-size: 13px; color: #666; }
+                .rx-patient { background: #f8fafc; border-radius: 8px; padding: 16px; margin-bottom: 20px; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+                .rx-patient .field { font-size: 14px; }
+                .rx-patient .field strong { color: #333; }
+                .rx-section { margin-bottom: 20px; }
+                .rx-section h3 { font-size: 14px; text-transform: uppercase; letter-spacing: 0.05em; color: #3b82f6; margin-bottom: 8px; border-bottom: 1px solid #e2e8f0; padding-bottom: 4px; }
+                .rx-section p { font-size: 14px; color: #334155; }
+                .rx-diagnosis { font-size: 20px; font-weight: 700; color: #1a1a2e; margin: 8px 0; }
+                .rx-meds { background: #eff6ff; border-radius: 8px; padding: 16px; margin-top: 8px; }
+                .rx-meds li { margin-bottom: 4px; font-size: 14px; }
+                .rx-footer { margin-top: 40px; display: flex; justify-content: space-between; align-items: flex-end; border-top: 1px solid #e2e8f0; padding-top: 16px; }
+                .rx-footer .signature { text-align: right; }
+                .rx-footer .signature .line { border-top: 1px solid #333; width: 200px; margin-bottom: 4px; }
+                .rx-badge { display: inline-block; padding: 2px 10px; border-radius: 20px; font-size: 12px; font-weight: 600; }
+                .rx-badge.high, .rx-badge.critical { background: #fef2f2; color: #dc2626; }
+                .rx-badge.medium { background: #fffbeb; color: #d97706; }
+                .rx-badge.low { background: #f0fdf4; color: #16a34a; }
+                @media print { body { padding: 20px; } }
+            </style>
+        </head>
+        <body>
+            <div class="rx-header">
+                <div>
+                    <h1>🏥 AI Healthcare</h1>
+                    <div style="font-size:12px;color:#94a3b8">Medical Prescription</div>
+                </div>
+                <div class="meta">
+                    <div>Report #${r.id}</div>
+                    <div>${date}</div>
+                </div>
+            </div>
+
+            <div class="rx-patient">
+                <div class="field"><strong>Patient:</strong> ${r.patient_name || '—'}</div>
+                <div class="field"><strong>Age:</strong> ${r.age || '—'}</div>
+                <div class="field"><strong>Gender:</strong> ${r.gender || '—'}</div>
+                <div class="field"><strong>Urgency:</strong> <span class="rx-badge ${r.urgency}">${r.urgency || '—'}</span></div>
+            </div>
+
+            <div class="rx-section">
+                <h3>Final Diagnosis</h3>
+                <div class="rx-diagnosis">${r.final_diagnosis}</div>
+                ${r.final_diagnosis_local ? `<div style="font-size:16px;color:#475569;margin-top:4px">${r.final_diagnosis_local}</div>` : ''}
+            </div>
+
+            ${r.prescribed_medications ? `
+            <div class="rx-section">
+                <h3>Prescribed Medications</h3>
+                <div class="rx-meds">
+                    <ul>
+                        ${r.prescribed_medications.split(/[,;\n]/).filter(Boolean).map(m => `<li>${m.trim()}</li>`).join('')}
+                    </ul>
+                </div>
+                ${r.prescribed_medications_local ? `<p style="font-size:13px;color:#475569;margin-top:8px">${r.prescribed_medications_local}</p>` : ''}
+            </div>` : ''}
+
+            ${r.dosage_instructions ? `
+            <div class="rx-section">
+                <h3>Dosage Instructions</h3>
+                <p>${r.dosage_instructions}</p>
+                ${r.dosage_instructions_local ? `<p style="font-size:13px;color:#475569;margin-top:4px">${r.dosage_instructions_local}</p>` : ''}
+            </div>` : ''}
+
+            ${r.diet_lifestyle ? `
+            <div class="rx-section">
+                <h3>Diet & Lifestyle Recommendations</h3>
+                <p>${r.diet_lifestyle}</p>
+                ${r.diet_lifestyle_local ? `<p style="font-size:13px;color:#475569;margin-top:4px">${r.diet_lifestyle_local}</p>` : ''}
+            </div>` : ''}
+
+            ${r.additional_instructions ? `
+            <div class="rx-section">
+                <h3>Additional Instructions</h3>
+                <p>${r.additional_instructions}</p>
+                ${r.additional_instructions_local ? `<p style="font-size:13px;color:#475569;margin-top:4px">${r.additional_instructions_local}</p>` : ''}
+            </div>` : ''}
+
+            ${r.follow_up_date ? `
+            <div class="rx-section">
+                <h3>Follow-up</h3>
+                <p><strong>${r.follow_up_date}</strong></p>
+            </div>` : ''}
+
+            ${r.doctor_comments ? `
+            <div class="rx-section">
+                <h3>Doctor's Notes</h3>
+                <p>${r.doctor_comments}</p>
+                ${r.doctor_comments_local ? `<p style="font-size:13px;color:#475569;margin-top:4px">${r.doctor_comments_local}</p>` : ''}
+            </div>` : ''}
+
+            <div class="rx-footer">
+                <div style="font-size:12px;color:#94a3b8">
+                    <p>⚠️ This prescription is generated through AI-assisted diagnosis.</p>
+                    <p>Consult your healthcare provider for definitive treatment.</p>
+                </div>
+                <div class="signature">
+                    <div class="line"></div>
+                    <div style="font-size:13px;font-weight:600">Dr. ${r.doctor_name || '—'}</div>
+                    <div style="font-size:11px;color:#94a3b8">Reviewing Physician</div>
+                </div>
+            </div>
+        </body>
+        </html>`);
+        printWindow.document.close();
+        setTimeout(() => printWindow.print(), 500);
+    } catch (err) {
+        showToast('Failed to generate prescription: ' + err.message, 'error');
+    }
+};
