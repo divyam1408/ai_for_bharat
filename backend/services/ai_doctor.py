@@ -34,18 +34,22 @@ def _build_chat_system_prompt(patient_info: dict | None) -> str:
     """Build CHAT_SYSTEM_PROMPT with optional language override and patient background."""
     preferred_language = (patient_info or {}).get("preferred_language", "English")
 
-    # Prepend explicit language requirement for non-English sessions
-    if preferred_language and preferred_language.strip().lower() != "english":
+    # Always inject explicit language directive — eliminates auto-detection ambiguity
+    lang = (preferred_language or "English").strip()
+    if lang.lower() == "english":
+        lang_override = (
+            "LANGUAGE REQUIREMENT: Respond ONLY in English. "
+            "Never switch to any other language.\n\n"
+        )
+    else:
         lang_override = (
             f"ABSOLUTE LANGUAGE REQUIREMENT — THIS OVERRIDES EVERYTHING BELOW:\n"
-            f"This patient's preferred language is {preferred_language}. "
-            f"You MUST respond ENTIRELY in {preferred_language} for EVERY message. "
+            f"The patient's preferred language is {lang}. "
+            f"You MUST respond ENTIRELY in {lang} for EVERY message, "
             f"regardless of what language the patient writes in. "
             f"Never switch to English or any other language.\n\n"
         )
-        base = lang_override + CHAT_SYSTEM_PROMPT
-    else:
-        base = CHAT_SYSTEM_PROMPT
+    base = lang_override + CHAT_SYSTEM_PROMPT
 
     # Append patient background only if there is meaningful data
     age = (patient_info or {}).get("age")
@@ -215,18 +219,23 @@ async def explain_diagnosis(
     )
     messages = list(chat_history) + [{"role": "user", "content": effective_message}]
 
-    # Build system prompt — explicit preferred_language overrides auto-detect
-    base_prompt = UNDERSTAND_DIAGNOSIS_PROMPT.format(report_context=report_context)
-    if preferred_language and preferred_language.strip().lower() != "english":
-        system_prompt = (
-            f"CRITICAL — LANGUAGE REQUIREMENT:\n"
-            f"The patient's preferred language is {preferred_language}. "
-            f"You MUST respond ENTIRELY in {preferred_language} for ALL messages, "
+    # Always inject explicit language directive
+    lang = (preferred_language or "English").strip()
+    if lang.lower() == "english":
+        lang_override = (
+            "LANGUAGE REQUIREMENT: Respond ONLY in English. "
+            "Never switch to any other language.\n\n"
+        )
+    else:
+        lang_override = (
+            f"ABSOLUTE LANGUAGE REQUIREMENT — THIS OVERRIDES EVERYTHING BELOW:\n"
+            f"The patient's preferred language is {lang}. "
+            f"You MUST respond ENTIRELY in {lang} for ALL messages, "
             f"regardless of what language the patient writes in. "
             f"Never mix languages or default to English.\n\n"
-        ) + base_prompt
-    else:
-        system_prompt = base_prompt
+        )
+    base_prompt = UNDERSTAND_DIAGNOSIS_PROMPT.format(report_context=report_context)
+    system_prompt = lang_override + base_prompt
 
     try:
         return bedrock_client.understand_chat(BEDROCK_CHAT_MODEL, report_context, messages, system_prompt=system_prompt)
