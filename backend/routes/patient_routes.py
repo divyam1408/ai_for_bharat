@@ -4,7 +4,7 @@ import base64
 import mimetypes
 import os
 from fastapi import APIRouter, Depends, HTTPException
-from models import StartChat, ChatMessage, DiagnosisResponse, PatientFeedbackResponse
+from models import StartChat, ChatMessage, DiagnosisResponse, PatientFeedbackResponse, UnderstandReportRequest
 from auth import get_current_user
 
 _IS_LAMBDA = bool(os.environ.get("AWS_LAMBDA_FUNCTION_NAME"))
@@ -50,8 +50,9 @@ from database import (
     get_doctor_patient_messages,
     save_doctor_patient_message,
     update_report_status,
+    get_user_by_id,
 )
-from services.ai_doctor import chat_response, generate_diagnosis_from_chat
+from services.ai_doctor import chat_response, generate_diagnosis_from_chat, explain_diagnosis, translate_message
 
 router = APIRouter(prefix="/api/patient", tags=["patient"])
 
@@ -62,12 +63,14 @@ async def start_chat(data: StartChat, user: dict = Depends(get_current_user)):
     if user["role"] != "patient":
         raise HTTPException(status_code=403, detail="Only patients can start chats")
 
+    patient_profile = await get_user_by_id(user["user_id"])
     report_id = await create_chat_session(
         patient_id=user["user_id"],
         medical_history=data.medical_history or "",
         current_medications=data.current_medications or "",
-        age=data.age,
-        gender=data.gender,
+        age=patient_profile.get("age") if patient_profile else None,
+        gender=patient_profile.get("gender") if patient_profile else None,
+        preferred_language=data.preferred_language or "English",
     )
 
     return {"report_id": report_id, "status": "chatting"}
@@ -98,10 +101,20 @@ async def send_chat_message(
     # Read image attachment if present (base64 + media type for Claude Vision)
     image_b64, image_media_type = _image_from_attachment(data.attachment_url)
 
+    # Build patient context from the report (stored at session creation)
+    patient_info = {
+        "age": report.get("age"),
+        "gender": report.get("gender"),
+        "medical_history": report.get("medical_history"),
+        "current_medications": report.get("current_medications"),
+        "preferred_language": report.get("preferred_language", "English"),
+    }
+
     # Get AI response
     ai_reply = await chat_response(
         message=data.message,
         chat_history=history[:-1],  # exclude the message we just saved (it's the current one)
+        patient_info=patient_info,
         image_b64=image_b64,
         image_media_type=image_media_type,
     )
@@ -131,6 +144,8 @@ async def generate_diagnosis(report_id: int, user: dict = Depends(get_current_us
     if not history:
         raise HTTPException(status_code=400, detail="No chat messages found. Chat first!")
 
+    preferred_language = report.get("preferred_language", "English")
+
     # Generate diagnosis from the full conversation
     ai_result = await generate_diagnosis_from_chat(
         chat_history=history,
@@ -138,6 +153,7 @@ async def generate_diagnosis(report_id: int, user: dict = Depends(get_current_us
         current_medications=report.get("current_medications", ""),
         age=report.get("age"),
         gender=report.get("gender"),
+        preferred_language=preferred_language,
     )
 
     # Summarize patient messages as the symptoms field
@@ -145,7 +161,7 @@ async def generate_diagnosis(report_id: int, user: dict = Depends(get_current_us
         msg["content"] for msg in history if msg["role"] == "patient"
     )
 
-    # Update the report with diagnosis data
+    # Update the report with diagnosis data (English + optional local-language fields)
     await update_report_with_diagnosis(
         report_id=report_id,
         symptoms_summary=symptoms_summary,
@@ -155,6 +171,10 @@ async def generate_diagnosis(report_id: int, user: dict = Depends(get_current_us
         recommended_actions=ai_result["recommended_actions"],
         differential_diagnoses=ai_result["differential_diagnoses"],
         description=ai_result["description"],
+        primary_condition_local=ai_result.get("primary_condition_local"),
+        recommended_actions_local=ai_result.get("recommended_actions_local"),
+        differential_diagnoses_local=ai_result.get("differential_diagnoses_local"),
+        description_local=ai_result.get("description_local"),
     )
 
     return DiagnosisResponse(
@@ -165,6 +185,10 @@ async def generate_diagnosis(report_id: int, user: dict = Depends(get_current_us
         recommended_actions=ai_result["recommended_actions"],
         differential_diagnoses=ai_result["differential_diagnoses"],
         description=ai_result["description"],
+        primary_condition_local=ai_result.get("primary_condition_local"),
+        recommended_actions_local=ai_result.get("recommended_actions_local"),
+        differential_diagnoses_local=ai_result.get("differential_diagnoses_local"),
+        description_local=ai_result.get("description_local"),
     )
 
 
@@ -184,11 +208,18 @@ async def respond_to_feedback(
     if report["status"] != "feedback_requested":
         raise HTTPException(status_code=400, detail="No feedback pending for this report")
 
-    # Save patient response
+    # Translate patient response to English for the doctor (if patient's language is non-English)
+    preferred_language = report.get("preferred_language", "English")
+    msg_en = None
+    if preferred_language and preferred_language.strip().lower() != "english":
+        msg_en = await translate_message(data.message, "English")
+
+    # Save patient response — message = original (patient's language), message_local = English for doctor
     await save_doctor_patient_message(
         report_id=report_id,
         sender_role="patient",
         message=data.message,
+        message_local=msg_en,
         attachment_url=data.attachment_url,
     )
 
@@ -237,5 +268,52 @@ async def delete_report(report_id: int, user: dict = Depends(get_current_user)):
     # Allow deletion of reports in any status for patient's own reports
     from database import delete_report as db_delete_report
     await db_delete_report(report_id)
-    
+
     return {"message": "Report deleted successfully"}
+
+
+@router.post("/understand-report/{report_id}")
+async def understand_report(
+    report_id: int,
+    data: UnderstandReportRequest,
+    user: dict = Depends(get_current_user),
+):
+    """Explain the completed diagnosis in plain language. Stateless — history passed by frontend."""
+    if user["role"] != "patient":
+        raise HTTPException(status_code=403, detail="Only patients can use this feature")
+
+    report = await get_report_by_id(report_id)
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not found")
+    if report["patient_id"] != user["user_id"]:
+        raise HTTPException(status_code=403, detail="Access denied")
+    if report["status"] != "completed":
+        raise HTTPException(status_code=400, detail="This report has not been finalized by a doctor yet")
+    if not report.get("final_diagnosis"):
+        raise HTTPException(status_code=400, detail="No final report found for this diagnosis")
+
+    report_context = f"""=== Patient Background ===
+Age: {report.get('age') or 'Not provided'}
+Gender: {report.get('gender') or 'Not provided'}
+Known Medical History / Long-term Conditions: {report.get('medical_history') or 'None mentioned'}
+Current Medications (before this visit): {report.get('current_medications') or 'None mentioned'}
+
+=== Doctor's Final Report ===
+Condition Diagnosed: {report.get('final_diagnosis', 'Not provided')}
+Urgency Level: {report.get('urgency', 'Not provided')}
+Prescribed Medications: {report.get('prescribed_medications') or 'None'}
+Dosage Instructions: {report.get('dosage_instructions') or 'Not provided'}
+Follow-up Date: {report.get('follow_up_date') or 'Not specified'}
+Diet & Lifestyle Advice: {report.get('diet_lifestyle') or 'Not provided'}
+Additional Instructions: {report.get('additional_instructions') or 'None'}
+Doctor's Notes: {report.get('doctor_comments') or 'None'}
+=== End of Report ==="""
+
+    preferred_language = report.get("preferred_language", "English")
+    response_text = await explain_diagnosis(
+        report_context=report_context,
+        message=data.message,
+        chat_history=data.chat_history,
+        preferred_language=preferred_language,
+    )
+    return {"response": response_text, "preferred_language": preferred_language}

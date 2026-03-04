@@ -22,6 +22,8 @@ async def register(data: UserRegister):
         password_hash=password_hash,
         role=data.role.value,
         specialization=data.specialization,
+        age=data.age,
+        gender=data.gender,
     )
 
     token = create_token(user_id, data.role.value, data.name)

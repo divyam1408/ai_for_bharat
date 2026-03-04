@@ -1081,3 +1081,191 @@ a:hover {
     margin: 0.5rem 0;
     white-space: pre;
 }
+
+/* ── Understand Diagnosis ──────────────────────────────────────────────── */
+
+.btn-understand {
+    background: linear-gradient(135deg, var(--accent-purple), #7c3aed);
+    color: white;
+    box-shadow: 0 4px 15px var(--accent-purple-glow);
+}
+
+.btn-understand:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 6px 20px var(--accent-purple-glow);
+}
+
+/* ── Speak (TTS) button — appears inline next to bubble labels ── */
+.btn-speak {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 0.78rem;
+    padding: 0.1rem 0.25rem;
+    border-radius: 4px;
+    opacity: 0.55;
+    vertical-align: middle;
+    transition: opacity 0.15s, transform 0.15s;
+    line-height: 1;
+}
+
+.btn-speak:hover {
+    opacity: 1;
+    transform: scale(1.15);
+}
+
+.btn-speak.speaking {
+    opacity: 1;
+    color: var(--accent-rose, #f43f5e);
+    animation: pulse-speak 1.2s ease-in-out infinite;
+}
+
+@keyframes pulse-speak {
+    0%, 100% { transform: scale(1); }
+    50%       { transform: scale(1.2); }
+}
+
+.understand-chat-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.75rem 1.5rem;
+    background: var(--bg-card);
+    border-bottom: 1px solid var(--border-subtle);
+}
+
+.understand-chat-title {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-weight: 600;
+    font-size: 0.95rem;
+    color: var(--text-primary);
+}
+
+/* ── Language Picker ───────────────────────────────────────────────────── */
+
+.lang-picker-screen {
+    min-height: calc(100vh - 64px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 2rem 1rem;
+}
+
+.lang-picker-card {
+    max-width: 560px;
+    width: 100%;
+    padding: 2.5rem 2rem;
+    text-align: center;
+}
+
+.lang-picker-icon {
+    font-size: 2.5rem;
+    margin-bottom: 1rem;
+}
+
+.lang-picker-title {
+    font-size: 1.4rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-bottom: 0.5rem;
+}
+
+.lang-picker-subtitle {
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+    margin-bottom: 1.75rem;
+    line-height: 1.5;
+}
+
+.lang-picker-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+    gap: 0.75rem;
+}
+
+.lang-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.2rem;
+    padding: 0.75rem 0.5rem;
+    border-radius: 12px;
+    border: 1px solid var(--border-subtle);
+    background: var(--bg-glass);
+    cursor: pointer;
+    transition: all 0.2s;
+    color: var(--text-primary);
+}
+
+.lang-btn:hover {
+    background: var(--bg-glass-hover);
+    border-color: var(--accent-purple);
+    box-shadow: 0 0 0 2px var(--accent-purple-glow);
+    transform: translateY(-2px);
+}
+
+.lang-btn.selected {
+    background: var(--accent-purple-glow);
+    border-color: var(--accent-purple);
+    box-shadow: 0 0 0 2px var(--accent-purple-glow);
+}
+
+.lang-btn-native {
+    font-size: 1.05rem;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.lang-btn-english {
+    font-size: 0.72rem;
+    color: var(--text-muted);
+}
+
+/* ── Language badge in chat header ─────────────────────────────────────── */
+
+.lang-active-badge {
+    font-size: 0.75rem;
+    font-weight: 600;
+    padding: 0.2rem 0.65rem;
+    border-radius: 999px;
+    background: var(--accent-purple-glow);
+    color: var(--accent-purple);
+    border: 1px solid var(--accent-purple);
+    white-space: nowrap;
+}
+
+/* ── Mic button ────────────────────────────────────────────────────────── */
+
+.btn-mic {
+    background: var(--bg-glass);
+    border: 1px solid var(--border-subtle);
+    color: var(--text-secondary);
+    padding: 0 0.85rem;
+    border-radius: 10px;
+    font-size: 1.1rem;
+    cursor: pointer;
+    transition: all 0.2s;
+    flex-shrink: 0;
+}
+
+.btn-mic:hover {
+    background: var(--bg-glass-hover);
+    color: var(--text-primary);
+}
+
+.btn-mic.active {
+    background: rgba(244, 63, 94, 0.15);
+    border-color: var(--accent-rose);
+    color: var(--accent-rose);
+    animation: mic-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes mic-pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(244, 63, 94, 0.4); }
+    50%       { box-shadow: 0 0 0 6px rgba(244, 63, 94, 0); }
+}

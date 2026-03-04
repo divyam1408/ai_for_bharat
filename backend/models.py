@@ -35,6 +35,8 @@ class UserRegister(BaseModel):
     password: str
     role: UserRole
     specialization: Optional[str] = None  # for doctors
+    age: Optional[int] = None             # for patients
+    gender: Optional[str] = None          # for patients
 
 
 class UserLogin(BaseModel):
@@ -67,13 +69,17 @@ class DiagnosisResponse(BaseModel):
     recommended_actions: str
     differential_diagnoses: str
     description: str
+    # Optional local-language translations (populated for non-English preferred_language)
+    primary_condition_local: Optional[str] = None
+    recommended_actions_local: Optional[str] = None
+    differential_diagnoses_local: Optional[str] = None
+    description_local: Optional[str] = None
 
 
 class StartChat(BaseModel):
     medical_history: Optional[str] = ""
     current_medications: Optional[str] = ""
-    age: Optional[int] = None
-    gender: Optional[str] = None
+    preferred_language: Optional[str] = "English"
 
 
 class ChatMessage(BaseModel):
@@ -84,6 +90,12 @@ class ChatMessage(BaseModel):
 class PatientFeedbackResponse(BaseModel):
     message: str
     attachment_url: Optional[str] = None
+
+
+class UnderstandReportRequest(BaseModel):
+    message: Optional[str] = None       # None on first call → generates initial explanation
+    chat_history: list[dict] = []       # [{role: "user"|"assistant", content: "..."}]
+    # preferred_language is read from the report (set at diagnosis start) — not sent by client
 
 
 # ── Doctor Models ──────────────────────────────────────────────────────────

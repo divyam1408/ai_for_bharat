@@ -29,6 +29,8 @@ async def init_db():
                 password_hash TEXT NOT NULL,
                 role TEXT NOT NULL CHECK(role IN ('patient', 'doctor')),
                 specialization TEXT,
+                age INTEGER,
+                gender TEXT,
                 created_at TEXT NOT NULL DEFAULT (datetime('now'))
             );
 
@@ -40,12 +42,17 @@ async def init_db():
                 current_medications TEXT DEFAULT '',
                 age INTEGER,
                 gender TEXT,
+                preferred_language TEXT NOT NULL DEFAULT 'English',
                 primary_condition TEXT DEFAULT '',
+                primary_condition_local TEXT,
                 confidence REAL DEFAULT 0.0,
                 urgency TEXT DEFAULT 'medium',
                 recommended_actions TEXT DEFAULT '',
+                recommended_actions_local TEXT,
                 differential_diagnoses TEXT DEFAULT '',
+                differential_diagnoses_local TEXT,
                 description TEXT DEFAULT '',
+                description_local TEXT,
                 status TEXT NOT NULL DEFAULT 'chatting'
                     CHECK(status IN ('chatting', 'pending_review', 'feedback_requested', 'under_review', 'completed')),
                 doctor_id INTEGER,
@@ -61,13 +68,19 @@ async def init_db():
                 doctor_id INTEGER NOT NULL,
                 original_ai_diagnosis TEXT NOT NULL,
                 final_diagnosis TEXT NOT NULL,
+                final_diagnosis_local TEXT,
                 doctor_comments TEXT DEFAULT '',
+                doctor_comments_local TEXT,
                 modified INTEGER NOT NULL DEFAULT 0,
                 prescribed_medications TEXT DEFAULT '',
+                prescribed_medications_local TEXT,
                 dosage_instructions TEXT DEFAULT '',
+                dosage_instructions_local TEXT,
                 follow_up_date TEXT DEFAULT '',
                 diet_lifestyle TEXT DEFAULT '',
+                diet_lifestyle_local TEXT,
                 additional_instructions TEXT DEFAULT '',
+                additional_instructions_local TEXT,
                 created_at TEXT NOT NULL DEFAULT (datetime('now')),
                 FOREIGN KEY (report_id) REFERENCES diagnosis_reports(id),
                 FOREIGN KEY (patient_id) REFERENCES users(id),
@@ -89,12 +102,36 @@ async def init_db():
                 report_id INTEGER NOT NULL,
                 sender_role TEXT NOT NULL CHECK(sender_role IN ('doctor', 'patient')),
                 message TEXT NOT NULL,
+                message_local TEXT,
                 attachment_url TEXT,
                 created_at TEXT NOT NULL DEFAULT (datetime('now')),
                 FOREIGN KEY (report_id) REFERENCES diagnosis_reports(id)
             );
         """)
         await db.commit()
+
+        # Migrations for columns added after initial schema
+        for migration in [
+            "ALTER TABLE users ADD COLUMN age INTEGER",
+            "ALTER TABLE users ADD COLUMN gender TEXT",
+            "ALTER TABLE diagnosis_reports ADD COLUMN preferred_language TEXT NOT NULL DEFAULT 'English'",
+            "ALTER TABLE diagnosis_reports ADD COLUMN primary_condition_local TEXT",
+            "ALTER TABLE diagnosis_reports ADD COLUMN recommended_actions_local TEXT",
+            "ALTER TABLE diagnosis_reports ADD COLUMN differential_diagnoses_local TEXT",
+            "ALTER TABLE diagnosis_reports ADD COLUMN description_local TEXT",
+            "ALTER TABLE final_reports ADD COLUMN final_diagnosis_local TEXT",
+            "ALTER TABLE final_reports ADD COLUMN doctor_comments_local TEXT",
+            "ALTER TABLE final_reports ADD COLUMN prescribed_medications_local TEXT",
+            "ALTER TABLE final_reports ADD COLUMN dosage_instructions_local TEXT",
+            "ALTER TABLE final_reports ADD COLUMN diet_lifestyle_local TEXT",
+            "ALTER TABLE final_reports ADD COLUMN additional_instructions_local TEXT",
+            "ALTER TABLE doctor_patient_messages ADD COLUMN message_local TEXT",
+        ]:
+            try:
+                await db.execute(migration)
+                await db.commit()
+            except Exception:
+                pass  # column already exists
     finally:
         await db.close()
 
@@ -102,13 +139,15 @@ async def init_db():
 # ── User helpers ───────────────────────────────────────────────────────────
 
 async def create_user(name: str, email: str, password_hash: str, role: str,
-                      specialization: str | None = None) -> int:
+                      specialization: str | None = None,
+                      age: int | None = None,
+                      gender: str | None = None) -> int:
     db = await get_db()
     try:
         cursor = await db.execute(
-            "INSERT INTO users (name, email, password_hash, role, specialization) "
-            "VALUES (?, ?, ?, ?, ?)",
-            (name, email, password_hash, role, specialization),
+            "INSERT INTO users (name, email, password_hash, role, specialization, age, gender) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (name, email, password_hash, role, specialization, age, gender),
         )
         await db.commit()
         return cursor.lastrowid
@@ -176,15 +215,16 @@ async def create_chat_session(
     current_medications: str = "",
     age: int | None = None,
     gender: str | None = None,
+    preferred_language: str = "English",
 ) -> int:
     """Create a shell diagnosis report for the chat phase."""
     db = await get_db()
     try:
         cursor = await db.execute(
             """INSERT INTO diagnosis_reports
-               (patient_id, symptoms, medical_history, current_medications, age, gender, status)
-               VALUES (?, '', ?, ?, ?, ?, 'chatting')""",
-            (patient_id, medical_history, current_medications, age, gender),
+               (patient_id, symptoms, medical_history, current_medications, age, gender, preferred_language, status)
+               VALUES (?, '', ?, ?, ?, ?, ?, 'chatting')""",
+            (patient_id, medical_history, current_medications, age, gender, preferred_language),
         )
         await db.commit()
         return cursor.lastrowid
@@ -201,6 +241,10 @@ async def update_report_with_diagnosis(
     recommended_actions: str,
     differential_diagnoses: str,
     description: str,
+    primary_condition_local: str | None = None,
+    recommended_actions_local: str | None = None,
+    differential_diagnoses_local: str | None = None,
+    description_local: str | None = None,
 ) -> None:
     """Fill in the AI diagnosis and move status to pending_review."""
     db = await get_db()
@@ -210,10 +254,14 @@ async def update_report_with_diagnosis(
                symptoms = ?, primary_condition = ?, confidence = ?,
                urgency = ?, recommended_actions = ?,
                differential_diagnoses = ?, description = ?,
+               primary_condition_local = ?, recommended_actions_local = ?,
+               differential_diagnoses_local = ?, description_local = ?,
                status = 'pending_review'
                WHERE id = ?""",
             (symptoms_summary, primary_condition, confidence, urgency,
-             recommended_actions, differential_diagnoses, description, report_id),
+             recommended_actions, differential_diagnoses, description,
+             primary_condition_local, recommended_actions_local,
+             differential_diagnoses_local, description_local, report_id),
         )
         await db.commit()
     finally:
@@ -298,9 +346,14 @@ async def get_report_by_id(report_id: int) -> dict | None:
     try:
         cursor = await db.execute(
             """SELECT dr.*, u.name as patient_name,
-                      fr.final_diagnosis, fr.doctor_comments, fr.modified as was_modified,
-                      fr.prescribed_medications, fr.dosage_instructions,
-                      fr.follow_up_date, fr.diet_lifestyle, fr.additional_instructions,
+                      fr.final_diagnosis, fr.final_diagnosis_local,
+                      fr.doctor_comments, fr.doctor_comments_local,
+                      fr.modified as was_modified,
+                      fr.prescribed_medications, fr.prescribed_medications_local,
+                      fr.dosage_instructions, fr.dosage_instructions_local,
+                      fr.follow_up_date,
+                      fr.diet_lifestyle, fr.diet_lifestyle_local,
+                      fr.additional_instructions, fr.additional_instructions_local,
                       fr.created_at as review_date, du.name as doctor_name
                FROM diagnosis_reports dr
                JOIN users u ON dr.patient_id = u.id
@@ -328,20 +381,32 @@ async def create_final_report(
     follow_up_date: str = "",
     diet_lifestyle: str = "",
     additional_instructions: str = "",
+    final_diagnosis_local: str | None = None,
+    doctor_comments_local: str | None = None,
+    prescribed_medications_local: str | None = None,
+    dosage_instructions_local: str | None = None,
+    diet_lifestyle_local: str | None = None,
+    additional_instructions_local: str | None = None,
 ) -> int:
     db = await get_db()
     try:
         cursor = await db.execute(
             """INSERT INTO final_reports
                (report_id, patient_id, doctor_id, original_ai_diagnosis,
-                final_diagnosis, doctor_comments, modified,
-                prescribed_medications, dosage_instructions,
-                follow_up_date, diet_lifestyle, additional_instructions)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                final_diagnosis, final_diagnosis_local,
+                doctor_comments, doctor_comments_local, modified,
+                prescribed_medications, prescribed_medications_local,
+                dosage_instructions, dosage_instructions_local,
+                follow_up_date, diet_lifestyle, diet_lifestyle_local,
+                additional_instructions, additional_instructions_local)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (report_id, patient_id, doctor_id, original_ai_diagnosis,
-             final_diagnosis, doctor_comments, int(modified),
-             prescribed_medications, dosage_instructions,
-             follow_up_date, diet_lifestyle, additional_instructions),
+             final_diagnosis, final_diagnosis_local,
+             doctor_comments, doctor_comments_local, int(modified),
+             prescribed_medications, prescribed_medications_local,
+             dosage_instructions, dosage_instructions_local,
+             follow_up_date, diet_lifestyle, diet_lifestyle_local,
+             additional_instructions, additional_instructions_local),
         )
         await db.execute(
             "UPDATE diagnosis_reports SET status = 'completed', doctor_id = ? WHERE id = ?",
@@ -409,14 +474,15 @@ async def get_chat_history(report_id: int) -> list[dict]:
 
 async def save_doctor_patient_message(report_id: int, sender_role: str,
                                        message: str,
+                                       message_local: str | None = None,
                                        attachment_url: str | None = None) -> int:
     """Save a doctor-patient feedback message."""
     db = await get_db()
     try:
         cursor = await db.execute(
-            "INSERT INTO doctor_patient_messages (report_id, sender_role, message, attachment_url) "
-            "VALUES (?, ?, ?, ?)",
-            (report_id, sender_role, message, attachment_url),
+            "INSERT INTO doctor_patient_messages (report_id, sender_role, message, message_local, attachment_url) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (report_id, sender_role, message, message_local, attachment_url),
         )
         await db.commit()
         return cursor.lastrowid
@@ -429,7 +495,7 @@ async def get_doctor_patient_messages(report_id: int) -> list[dict]:
     db = await get_db()
     try:
         cursor = await db.execute(
-            "SELECT id, sender_role, message, attachment_url, created_at "
+            "SELECT id, sender_role, message, message_local, attachment_url, created_at "
             "FROM doctor_patient_messages "
             "WHERE report_id = ? ORDER BY created_at ASC, id ASC",
             (report_id,),

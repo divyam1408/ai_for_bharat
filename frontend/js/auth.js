@@ -99,6 +99,24 @@ registerRoute('/register', async (app) => {
                     <input type="text" class="form-input" id="reg-specialization"
                            placeholder="e.g. General Medicine, Pediatrics">
                 </div>
+                <div id="patient-profile-group">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label class="form-label">Date of Birth</label>
+                            <input type="date" class="form-input" id="reg-dob"
+                                   max="${new Date().toISOString().split('T')[0]}">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Gender</label>
+                            <select class="form-select" id="reg-gender">
+                                <option value="">Prefer not to say</option>
+                                <option value="male">Male</option>
+                                <option value="female">Female</option>
+                                <option value="other">Other</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
                 <button type="submit" class="btn btn-primary btn-lg" style="width:100%" id="reg-btn">
                     Create Account
                 </button>
@@ -118,6 +136,8 @@ registerRoute('/register', async (app) => {
             selectedRole = tab.dataset.role;
             document.getElementById('specialization-group').style.display =
                 selectedRole === 'doctor' ? 'block' : 'none';
+            document.getElementById('patient-profile-group').style.display =
+                selectedRole === 'patient' ? 'block' : 'none';
         });
     });
 
@@ -136,6 +156,22 @@ registerRoute('/register', async (app) => {
             };
             if (selectedRole === 'doctor') {
                 body.specialization = document.getElementById('reg-specialization').value || null;
+            }
+            if (selectedRole === 'patient') {
+                const dob = document.getElementById('reg-dob').value;
+                if (dob) {
+                    const today = new Date();
+                    const birth = new Date(dob);
+                    let age = today.getFullYear() - birth.getFullYear();
+                    const notYetHadBirthday =
+                        today.getMonth() < birth.getMonth() ||
+                        (today.getMonth() === birth.getMonth() && today.getDate() < birth.getDate());
+                    if (notYetHadBirthday) age--;
+                    body.age = age;
+                } else {
+                    body.age = null;
+                }
+                body.gender = document.getElementById('reg-gender').value || null;
             }
 
             const data = await apiFetch('/api/register', {

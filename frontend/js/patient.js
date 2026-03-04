@@ -2,6 +2,23 @@
    Patient Pages — Dashboard, AI Chatbot, Feedback Response, Prescription
    ══════════════════════════════════════════════════════════════════════════ */
 
+// ── Language constants (shared across diagnosis chat + understand route) ───
+
+const PATIENT_LANGUAGES = [
+    { name: 'English',   code: 'en-IN', native: 'English',   abbr: 'EN' },
+    { name: 'Hindi',     code: 'hi-IN', native: 'हिंदी',     abbr: 'हि' },
+    { name: 'Bengali',   code: 'bn-IN', native: 'বাংলা',     abbr: 'বা' },
+    { name: 'Telugu',    code: 'te-IN', native: 'తెలుగు',    abbr: 'తె' },
+    { name: 'Marathi',   code: 'mr-IN', native: 'मराठी',     abbr: 'म' },
+    { name: 'Tamil',     code: 'ta-IN', native: 'தமிழ்',     abbr: 'த' },
+    { name: 'Gujarati',  code: 'gu-IN', native: 'ગુજરાતી',  abbr: 'ગ' },
+    { name: 'Kannada',   code: 'kn-IN', native: 'ಕನ್ನಡ',    abbr: 'ಕ' },
+    { name: 'Malayalam', code: 'ml-IN', native: 'മലയാളം',   abbr: 'മ' },
+    { name: 'Punjabi',   code: 'pa-IN', native: 'ਪੰਜਾਬੀ',  abbr: 'ਪ' },
+    { name: 'Odia',      code: 'or-IN', native: 'ଓଡ଼ିଆ',    abbr: 'ଓ' },
+];
+const LANG_BY_NAME = Object.fromEntries(PATIENT_LANGUAGES.map(l => [l.name, l]));
+
 // ── Helper: upload a file ─────────────────────────────────────────────────
 
 async function uploadFile(file) {
@@ -161,6 +178,11 @@ function renderReportCard(r) {
             </div>` : ''}
             <div style="color:var(--text-muted);font-size:0.8rem;margin-top:0.5rem">📅 ${date}</div>
         </div>
+        ${r.status === 'completed' && r.final_diagnosis ? `
+        <button class="btn btn-understand btn-sm" style="width:100%;margin-top:0.75rem"
+                onclick="navigate('/patient/understand/${r.id}')">
+            💡 Understand My Diagnosis
+        </button>` : ''}
     </div>`;
 }
 
@@ -238,6 +260,66 @@ registerRoute('/patient/report/:id', async (app, params) => {
                 </div>
             </div>` : ''}
 
+            ${r.primary_condition && r.status !== 'chatting' ? `
+            <div class="card" style="margin-top:1.5rem;border-color:rgba(59,130,246,0.3);box-shadow:0 0 20px rgba(59,130,246,0.07)">
+                <h3 class="card-title" style="color:var(--accent-blue);margin-bottom:1rem">🩺 AI Preliminary Diagnosis</h3>
+                <div class="diagnosis-field">
+                    <div class="diagnosis-field-label">Primary Condition</div>
+                    <div class="diagnosis-field-value">
+                        ${r.primary_condition_local
+                            ? `<div style="font-size:1.05rem;font-weight:600">${r.primary_condition_local}</div>
+                               <div style="font-size:0.82rem;color:var(--text-muted);margin-top:0.2rem">${r.primary_condition}</div>`
+                            : `<div style="font-size:1.05rem;font-weight:600">${r.primary_condition}</div>`}
+                    </div>
+                </div>
+                <div style="display:flex;gap:1.5rem;flex-wrap:wrap">
+                    <div class="diagnosis-field">
+                        <div class="diagnosis-field-label">Confidence</div>
+                        <div class="confidence-bar" style="width:120px">
+                            <div class="confidence-bar-fill" style="width:${Math.round((r.confidence || 0) * 100)}%"></div>
+                        </div>
+                        <span style="font-size:0.85rem">${Math.round((r.confidence || 0) * 100)}%</span>
+                    </div>
+                    <div class="diagnosis-field">
+                        <div class="diagnosis-field-label">Urgency</div>
+                        <span class="badge badge-${r.urgency}">${r.urgency}</span>
+                    </div>
+                </div>
+                ${r.description ? `
+                <div class="diagnosis-field">
+                    <div class="diagnosis-field-label">Description</div>
+                    <div class="diagnosis-field-value">
+                        ${r.description_local
+                            ? `<div>${r.description_local}</div>
+                               <div style="font-size:0.82rem;color:var(--text-muted);margin-top:0.4rem">${r.description}</div>`
+                            : `<div>${r.description}</div>`}
+                    </div>
+                </div>` : ''}
+                ${r.recommended_actions ? `
+                <div class="diagnosis-field">
+                    <div class="diagnosis-field-label">Recommended Actions</div>
+                    <div class="diagnosis-field-value">
+                        ${r.recommended_actions_local
+                            ? `<div>${r.recommended_actions_local}</div>
+                               <div style="font-size:0.82rem;color:var(--text-muted);margin-top:0.3rem">${r.recommended_actions}</div>`
+                            : `<div>${r.recommended_actions}</div>`}
+                    </div>
+                </div>` : ''}
+                ${r.differential_diagnoses ? `
+                <div class="diagnosis-field">
+                    <div class="diagnosis-field-label">Other Possible Conditions</div>
+                    <div class="diagnosis-field-value">
+                        ${r.differential_diagnoses_local
+                            ? `<div>${r.differential_diagnoses_local}</div>
+                               <div style="font-size:0.82rem;color:var(--text-muted);margin-top:0.3rem">${r.differential_diagnoses}</div>`
+                            : `<div>${r.differential_diagnoses}</div>`}
+                    </div>
+                </div>` : ''}
+                <p style="color:var(--text-muted);font-size:0.8rem;margin-top:1rem">
+                    ⚠️ This is a preliminary AI diagnosis pending doctor review.
+                </p>
+            </div>` : ''}
+
             ${r.feedback_thread && r.feedback_thread.length ? `
             <div class="card" style="margin-top:1.5rem;border-color:rgba(245,158,11,0.3)">
                 <h3 class="card-title" style="color:var(--accent-amber);margin-bottom:1rem">💬 Doctor-Patient Conversation</h3>
@@ -245,7 +327,10 @@ registerRoute('/patient/report/:id', async (app, params) => {
                     ${r.feedback_thread.map(msg => `
                         <div class="chat-bubble ${msg.sender_role === 'patient' ? 'patient' : 'assistant'}">
                             <div class="bubble-label">${msg.sender_role === 'patient' ? 'You' : '🩺 Doctor'}</div>
-                            ${escapeHtml(msg.message)}
+                            ${msg.sender_role === 'doctor' && msg.message_local
+                                ? `<div>${escapeHtml(msg.message_local)}</div>
+                                   <div style="font-size:0.82rem;color:var(--text-muted);margin-top:0.4rem">${escapeHtml(msg.message)}</div>`
+                                : escapeHtml(msg.message)}
                             ${renderAttachment(msg.attachment_url)}
                         </div>
                     `).join('')}
@@ -262,12 +347,14 @@ registerRoute('/patient/report/:id', async (app, params) => {
                     <textarea class="form-textarea" id="patient-response" rows="4"
                               placeholder="Type your response..."></textarea>
                 </div>
-                <div style="display:flex;gap:0.75rem;align-items:center">
+                <div style="display:flex;gap:0.75rem;align-items:center;flex-wrap:wrap">
                     <label class="btn btn-secondary btn-sm" style="cursor:pointer">
                         📎 Attach Image
                         <input type="file" id="feedback-file" accept="image/*,.pdf" style="display:none"
                                onchange="handleFeedbackFileSelect(this)">
                     </label>
+                    <button class="btn-mic" id="feedback-mic-btn" title="Record your response by voice"
+                            onclick="toggleFeedbackMic('${r.preferred_language || 'English'}')">🎤</button>
                     <span id="feedback-file-name" style="font-size:0.8rem;color:var(--text-muted)"></span>
                     <button class="btn btn-teal" style="margin-left:auto" id="send-response-btn"
                             onclick="sendPatientResponse(${r.id})">
@@ -283,17 +370,32 @@ registerRoute('/patient/report/:id', async (app, params) => {
                 </h3>
                 <div class="diagnosis-field">
                     <div class="diagnosis-field-label">Final Diagnosis</div>
-                    <div class="diagnosis-field-value" style="font-size:1.1rem;font-weight:600">${r.final_diagnosis}</div>
+                    <div class="diagnosis-field-value">
+                        ${r.final_diagnosis_local
+                            ? `<div style="font-size:1.1rem;font-weight:600">${r.final_diagnosis_local}</div>
+                               <div style="font-size:0.82rem;color:var(--text-muted);margin-top:0.2rem">${r.final_diagnosis}</div>`
+                            : `<div style="font-size:1.1rem;font-weight:600">${r.final_diagnosis}</div>`}
+                    </div>
                 </div>
                 ${r.prescribed_medications ? `
                 <div class="diagnosis-field">
                     <div class="diagnosis-field-label">Prescribed Medications</div>
-                    <div class="diagnosis-field-value">${r.prescribed_medications}</div>
+                    <div class="diagnosis-field-value">
+                        ${r.prescribed_medications_local
+                            ? `<div>${r.prescribed_medications_local}</div>
+                               <div style="font-size:0.82rem;color:var(--text-muted);margin-top:0.3rem">${r.prescribed_medications}</div>`
+                            : r.prescribed_medications}
+                    </div>
                 </div>` : ''}
                 ${r.dosage_instructions ? `
                 <div class="diagnosis-field">
                     <div class="diagnosis-field-label">Dosage Instructions</div>
-                    <div class="diagnosis-field-value">${r.dosage_instructions}</div>
+                    <div class="diagnosis-field-value">
+                        ${r.dosage_instructions_local
+                            ? `<div>${r.dosage_instructions_local}</div>
+                               <div style="font-size:0.82rem;color:var(--text-muted);margin-top:0.3rem">${r.dosage_instructions}</div>`
+                            : r.dosage_instructions}
+                    </div>
                 </div>` : ''}
                 ${r.follow_up_date ? `
                 <div class="diagnosis-field">
@@ -303,17 +405,32 @@ registerRoute('/patient/report/:id', async (app, params) => {
                 ${r.diet_lifestyle ? `
                 <div class="diagnosis-field">
                     <div class="diagnosis-field-label">Diet & Lifestyle</div>
-                    <div class="diagnosis-field-value">${r.diet_lifestyle}</div>
+                    <div class="diagnosis-field-value">
+                        ${r.diet_lifestyle_local
+                            ? `<div>${r.diet_lifestyle_local}</div>
+                               <div style="font-size:0.82rem;color:var(--text-muted);margin-top:0.3rem">${r.diet_lifestyle}</div>`
+                            : r.diet_lifestyle}
+                    </div>
                 </div>` : ''}
                 ${r.additional_instructions ? `
                 <div class="diagnosis-field">
                     <div class="diagnosis-field-label">Additional Instructions</div>
-                    <div class="diagnosis-field-value">${r.additional_instructions}</div>
+                    <div class="diagnosis-field-value">
+                        ${r.additional_instructions_local
+                            ? `<div>${r.additional_instructions_local}</div>
+                               <div style="font-size:0.82rem;color:var(--text-muted);margin-top:0.3rem">${r.additional_instructions}</div>`
+                            : r.additional_instructions}
+                    </div>
                 </div>` : ''}
                 ${r.doctor_comments ? `
                 <div class="diagnosis-field">
                     <div class="diagnosis-field-label">Doctor's Notes</div>
-                    <div class="diagnosis-field-value">${r.doctor_comments}</div>
+                    <div class="diagnosis-field-value">
+                        ${r.doctor_comments_local
+                            ? `<div>${r.doctor_comments_local}</div>
+                               <div style="font-size:0.82rem;color:var(--text-muted);margin-top:0.3rem">${r.doctor_comments}</div>`
+                            : r.doctor_comments}
+                    </div>
                 </div>` : ''}
                 <div class="diagnosis-field">
                     <div class="diagnosis-field-label">Reviewed By</div>
@@ -322,6 +439,10 @@ registerRoute('/patient/report/:id', async (app, params) => {
                 ${r.was_modified ? '<span class="badge badge-medium" style="margin-top:0.5rem">Modified from AI diagnosis</span>' : ''}
                 <button class="btn btn-primary btn-lg" style="width:100%;margin-top:1.5rem" onclick="printPrescription(${r.id})">
                     📥 Download Prescription
+                </button>
+                <button class="btn btn-understand" style="width:100%;margin-top:0.75rem"
+                        onclick="navigate('/patient/understand/${r.id}')">
+                    💡 Understand your report in simple language
                 </button>
             </div>` : ''}
         `;
@@ -333,6 +454,58 @@ registerRoute('/patient/report/:id', async (app, params) => {
 // ── Feedback response ─────────────────────────────────────────────────────
 
 let feedbackFileToUpload = null;
+
+let _feedbackMicRecognition = null;
+
+window.toggleFeedbackMic = function (preferredLangName) {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+        showToast('Voice input not supported in this browser. Please use Chrome or Edge.', 'error');
+        return;
+    }
+    const micBtn = document.getElementById('feedback-mic-btn');
+    if (_feedbackMicRecognition) {
+        _feedbackMicRecognition.stop();
+        return;
+    }
+    const langInfo = LANG_BY_NAME[preferredLangName];
+    const langCode = langInfo ? langInfo.code : 'en-IN';
+
+    _feedbackMicRecognition = new SpeechRecognition();
+    _feedbackMicRecognition.lang = langCode;
+    _feedbackMicRecognition.continuous = false;
+    _feedbackMicRecognition.interimResults = false;
+
+    _feedbackMicRecognition.onstart = () => {
+        micBtn.classList.add('btn-mic--recording');
+        micBtn.title = 'Click to stop recording';
+        showToast('Listening… click mic to stop', 'info');
+    };
+    _feedbackMicRecognition.onresult = (event) => {
+        const transcript = event.results[0][0].transcript.trim();
+        const textarea = document.getElementById('patient-response');
+        if (textarea && transcript) {
+            const existing = textarea.value.trim();
+            textarea.value = existing ? existing + ' ' + transcript : transcript;
+            textarea.focus();
+            showToast('Voice converted to text ✓', 'success');
+        }
+    };
+    _feedbackMicRecognition.onerror = (event) => {
+        if (event.error === 'not-allowed') {
+            showToast('Microphone permission denied.', 'error');
+        } else if (event.error === 'no-speech') {
+            showToast('No speech detected. Please try again.', 'info');
+        } else {
+            showToast('Voice input error: ' + event.error, 'error');
+        }
+    };
+    _feedbackMicRecognition.onend = () => {
+        _feedbackMicRecognition = null;
+        if (micBtn) { micBtn.classList.remove('btn-mic--recording'); micBtn.title = 'Record your response by voice'; }
+    };
+    _feedbackMicRecognition.start();
+};
 
 window.handleFeedbackFileSelect = function (input) {
     feedbackFileToUpload = input.files[0] || null;
@@ -431,6 +604,7 @@ window.printPrescription = async function (reportId) {
             <div class="rx-section">
                 <h3>Final Diagnosis</h3>
                 <div class="rx-diagnosis">${r.final_diagnosis}</div>
+                ${r.final_diagnosis_local ? `<div style="font-size:16px;color:#475569;margin-top:4px">${r.final_diagnosis_local}</div>` : ''}
             </div>
 
             ${r.prescribed_medications ? `
@@ -441,24 +615,28 @@ window.printPrescription = async function (reportId) {
                         ${r.prescribed_medications.split(/[,;\n]/).filter(Boolean).map(m => `<li>${m.trim()}</li>`).join('')}
                     </ul>
                 </div>
+                ${r.prescribed_medications_local ? `<p style="font-size:13px;color:#475569;margin-top:8px">${r.prescribed_medications_local}</p>` : ''}
             </div>` : ''}
 
             ${r.dosage_instructions ? `
             <div class="rx-section">
                 <h3>Dosage Instructions</h3>
                 <p>${r.dosage_instructions}</p>
+                ${r.dosage_instructions_local ? `<p style="font-size:13px;color:#475569;margin-top:4px">${r.dosage_instructions_local}</p>` : ''}
             </div>` : ''}
 
             ${r.diet_lifestyle ? `
             <div class="rx-section">
                 <h3>Diet & Lifestyle Recommendations</h3>
                 <p>${r.diet_lifestyle}</p>
+                ${r.diet_lifestyle_local ? `<p style="font-size:13px;color:#475569;margin-top:4px">${r.diet_lifestyle_local}</p>` : ''}
             </div>` : ''}
 
             ${r.additional_instructions ? `
             <div class="rx-section">
                 <h3>Additional Instructions</h3>
                 <p>${r.additional_instructions}</p>
+                ${r.additional_instructions_local ? `<p style="font-size:13px;color:#475569;margin-top:4px">${r.additional_instructions_local}</p>` : ''}
             </div>` : ''}
 
             ${r.follow_up_date ? `
@@ -471,6 +649,7 @@ window.printPrescription = async function (reportId) {
             <div class="rx-section">
                 <h3>Doctor's Notes</h3>
                 <p>${r.doctor_comments}</p>
+                ${r.doctor_comments_local ? `<p style="font-size:13px;color:#475569;margin-top:4px">${r.doctor_comments_local}</p>` : ''}
             </div>` : ''}
 
             <div class="rx-footer">
@@ -499,6 +678,8 @@ registerRoute('/patient/chat', async (app) => {
     const user = getUser();
     if (!user || user.role !== 'patient') { navigate('/login'); return; }
 
+    let selectedLang = PATIENT_LANGUAGES[0]; // default English
+
     app.innerHTML = renderNavbar('patient') + `
     <div class="page-container" style="max-width:600px">
         <div class="card">
@@ -507,21 +688,6 @@ registerRoute('/patient/chat', async (app) => {
                 Please provide some basic information. All fields are optional.
             </p>
             <form id="start-chat-form">
-                <div class="form-row">
-                    <div class="form-group">
-                        <label class="form-label">Age</label>
-                        <input type="number" class="form-input" id="chat-age" placeholder="e.g. 35" min="1" max="120">
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">Gender</label>
-                        <select class="form-select" id="chat-gender">
-                            <option value="">Prefer not to say</option>
-                            <option value="male">Male</option>
-                            <option value="female">Female</option>
-                            <option value="other">Other</option>
-                        </select>
-                    </div>
-                </div>
                 <div class="form-group">
                     <label class="form-label">Medical History</label>
                     <textarea class="form-textarea" id="chat-history"
@@ -532,12 +698,35 @@ registerRoute('/patient/chat', async (app) => {
                     <input type="text" class="form-input" id="chat-meds"
                            placeholder="e.g. Paracetamol, Metformin">
                 </div>
+                <div class="form-group">
+                    <label class="form-label">Preferred Language for this Consultation</label>
+                    <p style="font-size:0.8rem;color:var(--text-muted);margin-bottom:0.75rem">
+                        The AI doctor will respond in your chosen language throughout the session.
+                    </p>
+                    <div class="lang-picker-grid" id="lang-selector">
+                        ${PATIENT_LANGUAGES.map(l => `
+                            <button type="button" class="lang-btn${l.name === 'English' ? ' selected' : ''}"
+                                    data-name="${l.name}" data-code="${l.code}">
+                                <span class="lang-btn-native">${l.native}</span>
+                                <span class="lang-btn-english">${l.name}</span>
+                            </button>
+                        `).join('')}
+                    </div>
+                </div>
                 <button type="submit" class="btn btn-teal btn-lg" style="width:100%" id="start-btn">
                     💬 Start Chat with AI Doctor
                 </button>
             </form>
         </div>
     </div>`;
+
+    document.querySelectorAll('#lang-selector .lang-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.querySelectorAll('#lang-selector .lang-btn').forEach(b => b.classList.remove('selected'));
+            btn.classList.add('selected');
+            selectedLang = { name: btn.dataset.name, code: btn.dataset.code };
+        });
+    });
 
     document.getElementById('start-chat-form').addEventListener('submit', async (e) => {
         e.preventDefault();
@@ -548,13 +737,15 @@ registerRoute('/patient/chat', async (app) => {
             const data = await apiFetch('/api/patient/start-chat', {
                 method: 'POST',
                 body: JSON.stringify({
-                    age: document.getElementById('chat-age').value
-                        ? parseInt(document.getElementById('chat-age').value) : null,
-                    gender: document.getElementById('chat-gender').value || null,
                     medical_history: document.getElementById('chat-history').value || '',
                     current_medications: document.getElementById('chat-meds').value || '',
+                    preferred_language: selectedLang.name,
                 }),
             });
+            // Store language for the chatroom mic
+            sessionStorage.setItem('chatLangName', selectedLang.name);
+            sessionStorage.setItem('chatLangCode', selectedLang.code);
+            sessionStorage.setItem('chatLangAbbr', selectedLang.abbr || selectedLang.name.slice(0, 2).toUpperCase());
             navigate(`/patient/chatroom/${data.report_id}`);
         } catch (err) {
             showToast(err.message, 'error');
@@ -612,19 +803,85 @@ registerRoute('/patient/chatroom/:id', async (app, params) => {
         }
     });
     document.getElementById('chat-input').focus();
+
+    // Initialise mic language from the session's preferred language
+    _chatPrefLangCode = sessionStorage.getItem('chatLangCode') || 'en-IN';
+    _chatPrefLangName = sessionStorage.getItem('chatLangName') || 'English';
+    _chatPrefLangAbbr = sessionStorage.getItem('chatLangAbbr') || 'EN';
+    _micLang = _chatPrefLangCode;
+    const langToggleBtn = document.getElementById('lang-btn');
+    if (langToggleBtn) {
+        langToggleBtn.textContent = _chatPrefLangAbbr;
+        // Hide lang toggle when English is selected (no point toggling EN ↔ EN)
+        langToggleBtn.style.display = _chatPrefLangCode === 'en-IN' ? 'none' : '';
+    }
 });
 
 let chatFileToUpload = null;
 
-// ── Speech-to-Text (Web Speech API) ──────────────────────────────────────
+// ── Speech-to-Text + Audio Recording (Web Speech API + MediaRecorder) ────
 let _micLang = 'en-IN';
+let _chatPrefLangCode = 'en-IN'; // preferred lang for current diagnosis session
+let _chatPrefLangName = 'English';
+let _chatPrefLangAbbr = 'EN';
 let _recognition = null;
+// Audio recording (for playback in patient bubble)
+let _mediaRecorder = null;
+let _audioChunks = [];
+let _lastAudioBlob = null;
+// TTS (text-to-speech) text store — indexed by button onclick
+const _speakableTexts = [];
+
+// ── Text-to-Speech (Web Speech API) ──────────────────────────────────────
+function _resetSpeakButtons() {
+    document.querySelectorAll('.btn-speak.speaking').forEach(b => {
+        b.classList.remove('speaking');
+        b.textContent = '🔊';
+        b.title = 'Read aloud';
+    });
+}
+
+window.speakText = function (text, langCode, btn) {
+    if (!window.speechSynthesis) {
+        showToast('Text-to-speech is not supported in your browser.', 'error');
+        return;
+    }
+    // If currently speaking → stop (toggle off) and reset all buttons
+    if (window.speechSynthesis.speaking) {
+        window.speechSynthesis.cancel();
+        _resetSpeakButtons();
+        return;
+    }
+    // Strip markdown/HTML tags for cleaner speech
+    const plain = text.replace(/[*_`#>~\[\]]/g, '').replace(/<[^>]*>/g, '').trim();
+    const u = new SpeechSynthesisUtterance(plain);
+    u.lang = langCode || 'en-IN';
+    u.rate = 0.9;
+    u.pitch = 1;
+    // Mark the clicked button as active
+    if (btn) {
+        btn.classList.add('speaking');
+        btn.textContent = '⏹';
+        btn.title = 'Click to stop';
+    }
+    // Reset button state when speech ends or errors
+    u.onend = _resetSpeakButtons;
+    u.onerror = _resetSpeakButtons;
+    window.speechSynthesis.speak(u);
+};
 
 window.toggleMicLang = function () {
-    _micLang = _micLang === 'en-IN' ? 'hi-IN' : 'en-IN';
     const langBtn = document.getElementById('lang-btn');
-    if (langBtn) langBtn.textContent = _micLang === 'en-IN' ? 'EN' : 'हि';
-    showToast(_micLang === 'en-IN' ? 'Switched to English' : 'हिंदी में बदला', 'info');
+    // Toggle between preferred language and English
+    if (_micLang === _chatPrefLangCode && _chatPrefLangCode !== 'en-IN') {
+        _micLang = 'en-IN';
+        if (langBtn) langBtn.textContent = 'EN';
+        showToast('Switched to English', 'info');
+    } else {
+        _micLang = _chatPrefLangCode;
+        if (langBtn) langBtn.textContent = _chatPrefLangAbbr;
+        showToast(`Switched to ${_chatPrefLangName}`, 'info');
+    }
 };
 
 window.toggleMicRecording = function () {
@@ -636,11 +893,30 @@ window.toggleMicRecording = function () {
 
     const micBtn = document.getElementById('mic-btn');
 
-    // If already listening — stop
+    // If already listening — stop both recognition and recorder
     if (_recognition) {
         _recognition.stop();
+        if (_mediaRecorder && _mediaRecorder.state !== 'inactive') _mediaRecorder.stop();
         return;
     }
+
+    // Try to co-start MediaRecorder for audio playback (best-effort — falls back gracefully)
+    _audioChunks = [];
+    _lastAudioBlob = null;
+    navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
+        _mediaRecorder = new MediaRecorder(stream);
+        _mediaRecorder.ondataavailable = e => { if (e.data.size > 0) _audioChunks.push(e.data); };
+        _mediaRecorder.onstop = () => {
+            if (_audioChunks.length > 0) {
+                _lastAudioBlob = new Blob(_audioChunks, { type: _mediaRecorder.mimeType || 'audio/webm' });
+            }
+            stream.getTracks().forEach(t => t.stop());
+            _mediaRecorder = null;
+        };
+        _mediaRecorder.start();
+    }).catch(() => {
+        // getUserMedia denied or unavailable — speech recognition still works, just no audio blob
+    });
 
     _recognition = new SpeechRecognition();
     _recognition.lang = _micLang;
@@ -662,9 +938,12 @@ window.toggleMicRecording = function () {
             input.focus();
             showToast('Voice converted to text ✓', 'success');
         }
+        // Stop recorder so the blob is finalised before Send is clicked
+        if (_mediaRecorder && _mediaRecorder.state !== 'inactive') _mediaRecorder.stop();
     };
 
     _recognition.onerror = (event) => {
+        if (_mediaRecorder && _mediaRecorder.state !== 'inactive') _mediaRecorder.stop();
         if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
             showToast('Microphone permission denied. Please allow mic access in browser settings.', 'error');
         } else if (event.error === 'no-speech') {
@@ -680,6 +959,7 @@ window.toggleMicRecording = function () {
         micBtn.classList.remove('btn-mic--recording');
         micBtn.title = 'Click to record voice';
         _recognition = null;
+        if (_mediaRecorder && _mediaRecorder.state !== 'inactive') _mediaRecorder.stop();
     };
 
     _recognition.start();
@@ -711,11 +991,21 @@ window.sendChatMessage = async function (reportId) {
         chatFileToUpload = null;
     }
 
+    // Consume the audio blob (if a voice recording was made) for inline playback
+    let audioHtml = '';
+    if (_lastAudioBlob) {
+        const audioUrl = URL.createObjectURL(_lastAudioBlob);
+        audioHtml = `<audio controls src="${audioUrl}"
+            style="display:block;margin-top:0.4rem;height:36px;width:190px;opacity:0.85"></audio>`;
+        _lastAudioBlob = null;
+    }
+
     messagesDiv.innerHTML += `
         <div class="chat-bubble patient">
             <div class="bubble-label">You</div>
             ${message ? escapeHtml(message) : ''}
             ${attachmentHtml}
+            ${audioHtml}
         </div>`;
     input.value = '';
     input.disabled = true;
@@ -736,9 +1026,14 @@ window.sendChatMessage = async function (reportId) {
             }),
         });
         document.getElementById('typing')?.remove();
+        const speakIdx = _speakableTexts.length;
+        _speakableTexts.push(data.reply);
         messagesDiv.innerHTML += `
             <div class="chat-bubble assistant">
-                <div class="bubble-label">AI Assistant</div>
+                <div class="bubble-label">AI Assistant
+                    <button class="btn-speak" title="Read aloud"
+                            onclick="speakText(_speakableTexts[${speakIdx}], '${_chatPrefLangCode}', this)">🔊</button>
+                </div>
                 ${renderMarkdown(data.reply)}
             </div>`;
     } catch (err) {
@@ -759,13 +1054,21 @@ window.requestDiagnosis = async function (reportId) {
 
     try {
         const data = await apiFetch(`/api/patient/diagnose/${reportId}`, { method: 'POST' });
+        const conditionDisplay = data.primary_condition_local
+            ? `<div style="font-size:1.1rem;font-weight:600">${data.primary_condition_local}</div>
+               <div style="font-size:0.82rem;color:var(--text-muted);margin-top:0.2rem">${data.primary_condition}</div>`
+            : `<div style="font-size:1.1rem;font-weight:600">${data.primary_condition}</div>`;
+        const descDisplay = data.description_local
+            ? `<div>${data.description_local}</div>
+               <div style="font-size:0.82rem;color:var(--text-muted);margin-top:0.4rem">${data.description}</div>`
+            : `<div>${data.description}</div>`;
         const messagesDiv = document.getElementById('chat-messages');
         messagesDiv.innerHTML += `
             <div class="card diagnosis-card" style="margin:0.5rem;max-width:95%">
                 <h3 style="margin-bottom:1rem;color:var(--accent-blue)">🩺 Preliminary Diagnosis</h3>
                 <div class="diagnosis-field">
                     <div class="diagnosis-field-label">Primary Condition</div>
-                    <div class="diagnosis-field-value" style="font-size:1.1rem;font-weight:600">${data.primary_condition}</div>
+                    <div class="diagnosis-field-value">${conditionDisplay}</div>
                 </div>
                 <div style="display:flex;gap:1.5rem;flex-wrap:wrap">
                     <div class="diagnosis-field">
@@ -782,7 +1085,7 @@ window.requestDiagnosis = async function (reportId) {
                 </div>
                 <div class="diagnosis-field">
                     <div class="diagnosis-field-label">Description</div>
-                    <div class="diagnosis-field-value">${data.description}</div>
+                    <div class="diagnosis-field-value">${descDisplay}</div>
                 </div>
                 <p style="color:var(--text-muted);font-size:0.8rem;margin-top:1rem">
                     ⚠️ A qualified doctor will review your case.
@@ -840,3 +1143,179 @@ window.cancelChat = async function (reportId) {
         showToast(err.message, 'error');
     }
 };
+
+// ── Understand Diagnosis Chat ─────────────────────────────────────────────
+
+registerRoute('/patient/understand/:id', async (app, params) => {
+    const user = getUser();
+    if (!user || user.role !== 'patient') { navigate('/login'); return; }
+
+    const reportId = params.id;
+    let understandHistory = [];
+    let micRecognition = null;
+    // Language is read from the report (via API response) — starts unknown
+    let prefLangCode = 'en-IN';
+
+    app.innerHTML = renderNavbar('patient') + `
+    <div class="chat-container">
+        <div class="understand-chat-header">
+            <button class="btn btn-secondary btn-sm" onclick="navigate('/patient/report/${reportId}')">
+                ← Back to Report
+            </button>
+            <div class="understand-chat-title">
+                <span>💡</span>
+                <span>Understand Your Diagnosis</span>
+            </div>
+            <span class="lang-active-badge" id="understand-lang-badge" title="Conversation language">…</span>
+        </div>
+        <div class="chat-messages" id="understand-messages">
+            <div class="chat-bubble assistant" id="initial-message">
+                <div class="bubble-label">Health Assistant</div>
+                <span style="opacity:0.75">
+                    📋 Reading your report and preparing a simple explanation just for you...
+                </span>
+                <div class="typing-indicator" id="initial-typing" style="margin-top:0.5rem">
+                    <span></span><span></span><span></span>
+                </div>
+            </div>
+        </div>
+        <div class="chat-input-area">
+            <input type="text" class="form-input" id="understand-input"
+                   placeholder="Ask a question about your report..." autocomplete="off">
+            <button class="btn btn-mic" id="mic-btn" title="Speak your question"
+                    onclick="toggleUnderstandMic()">🎤</button>
+            <button class="btn btn-understand" id="understand-send-btn"
+                    onclick="sendUnderstandMessage(${reportId})">Send</button>
+        </div>
+    </div>`;
+
+    document.getElementById('understand-input').addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            document.getElementById('understand-send-btn').click();
+        }
+    });
+
+    window.toggleUnderstandMic = function () {
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        if (!SpeechRecognition) {
+            showToast('Speech recognition is not supported in your browser', 'error');
+            return;
+        }
+        const micBtn = document.getElementById('mic-btn');
+        if (micRecognition) {
+            micRecognition.stop();
+            micRecognition = null;
+            micBtn.classList.remove('active');
+            micBtn.textContent = '🎤';
+            return;
+        }
+        micRecognition = new SpeechRecognition();
+        micRecognition.lang = prefLangCode;  // closure — updated after first API call
+        micRecognition.continuous = false;
+        micRecognition.interimResults = false;
+        micBtn.classList.add('active');
+        micBtn.textContent = '⏹';
+        micRecognition.onresult = (event) => {
+            const transcript = event.results[0][0].transcript;
+            const input = document.getElementById('understand-input');
+            if (input) input.value = transcript;
+            micRecognition = null;
+            micBtn.classList.remove('active');
+            micBtn.textContent = '🎤';
+        };
+        micRecognition.onerror = () => {
+            micRecognition = null;
+            if (micBtn) { micBtn.classList.remove('active'); micBtn.textContent = '🎤'; }
+            showToast('Could not capture audio — please try again.', 'error');
+        };
+        micRecognition.onend = () => {
+            micRecognition = null;
+            if (micBtn) { micBtn.classList.remove('active'); micBtn.textContent = '🎤'; }
+        };
+        micRecognition.start();
+    };
+
+    // Auto-load initial explanation — backend reads preferred_language from the report
+    try {
+        const data = await apiFetch(`/api/patient/understand-report/${reportId}`, {
+            method: 'POST',
+            body: JSON.stringify({ message: null, chat_history: [] }),
+        });
+        // Update language badge and mic language from the report's stored preferred_language
+        if (data.preferred_language) {
+            const langInfo = LANG_BY_NAME[data.preferred_language];
+            prefLangCode = langInfo ? langInfo.code : 'en-IN';
+            const badge = document.getElementById('understand-lang-badge');
+            if (badge) badge.textContent = langInfo ? langInfo.native : data.preferred_language;
+        }
+        document.getElementById('initial-message')?.remove();
+        understandHistory.push({ role: 'assistant', content: data.response });
+        const messagesDiv = document.getElementById('understand-messages');
+        const initSpeakIdx = _speakableTexts.length;
+        _speakableTexts.push(data.response);
+        messagesDiv.innerHTML += `
+            <div class="chat-bubble assistant">
+                <div class="bubble-label">Health Assistant
+                    <button class="btn-speak" title="Read aloud"
+                            onclick="speakText(_speakableTexts[${initSpeakIdx}], '${prefLangCode}', this)">🔊</button>
+                </div>
+                ${renderMarkdown(data.response)}
+            </div>`;
+        messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        document.getElementById('understand-input')?.focus();
+    } catch (err) {
+        document.getElementById('initial-message')?.remove();
+        showToast('Could not load explanation: ' + err.message, 'error');
+    }
+
+    window.sendUnderstandMessage = async function (rId) {
+        const input = document.getElementById('understand-input');
+        const message = input.value.trim();
+        if (!message) return;
+
+        const messagesDiv = document.getElementById('understand-messages');
+        const sendBtn = document.getElementById('understand-send-btn');
+        const historyBeforeSend = [...understandHistory];
+
+        understandHistory.push({ role: 'user', content: message });
+        messagesDiv.innerHTML += `
+            <div class="chat-bubble patient">
+                <div class="bubble-label">You</div>
+                ${escapeHtml(message)}
+            </div>`;
+        input.value = '';
+        input.disabled = true;
+        sendBtn.disabled = true;
+        messagesDiv.innerHTML += `<div class="typing-indicator" id="understand-typing"><span></span><span></span><span></span></div>`;
+        messagesDiv.scrollTop = messagesDiv.scrollHeight;
+
+        try {
+            const data = await apiFetch(`/api/patient/understand-report/${rId}`, {
+                method: 'POST',
+                body: JSON.stringify({ message, chat_history: historyBeforeSend }),
+            });
+            document.getElementById('understand-typing')?.remove();
+            understandHistory.push({ role: 'assistant', content: data.response });
+            const uSpeakIdx = _speakableTexts.length;
+            _speakableTexts.push(data.response);
+            messagesDiv.innerHTML += `
+                <div class="chat-bubble assistant">
+                    <div class="bubble-label">Health Assistant
+                        <button class="btn-speak" title="Read aloud"
+                                onclick="speakText(_speakableTexts[${uSpeakIdx}], '${prefLangCode}', this)">🔊</button>
+                    </div>
+                    ${renderMarkdown(data.response)}
+                </div>`;
+        } catch (err) {
+            document.getElementById('understand-typing')?.remove();
+            understandHistory.pop();
+            showToast(err.message, 'error');
+        }
+
+        input.disabled = false;
+        sendBtn.disabled = false;
+        input.focus();
+        messagesDiv.scrollTop = messagesDiv.scrollHeight;
+    };
+});

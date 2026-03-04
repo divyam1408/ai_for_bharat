@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 import aisuite as ai
 
 from services.bedrock_client import BedrockClient
-from services.prompts import CHAT_SYSTEM_PROMPT, DIAGNOSIS_SYSTEM_PROMPT
+from services.prompts import CHAT_SYSTEM_PROMPT, DIAGNOSIS_SYSTEM_PROMPT, UNDERSTAND_DIAGNOSIS_PROMPT, TRANSLATE_REPORT_FIELDS_PROMPT, get_diagnosis_system_prompt
 
 # Load environment variables from .env file
 env_path = Path(__file__).parent.parent / '.env'
@@ -30,6 +30,43 @@ BEDROCK_REPORT_MODEL = "anthropic.claude-opus-4-5-20251101-v1:0"
 
 # ── Chat response ──────────────────────────────────────────────────────────
 
+def _build_chat_system_prompt(patient_info: dict | None) -> str:
+    """Build CHAT_SYSTEM_PROMPT with optional language override and patient background."""
+    preferred_language = (patient_info or {}).get("preferred_language", "English")
+
+    # Prepend explicit language requirement for non-English sessions
+    if preferred_language and preferred_language.strip().lower() != "english":
+        lang_override = (
+            f"ABSOLUTE LANGUAGE REQUIREMENT — THIS OVERRIDES EVERYTHING BELOW:\n"
+            f"This patient's preferred language is {preferred_language}. "
+            f"You MUST respond ENTIRELY in {preferred_language} for EVERY message. "
+            f"regardless of what language the patient writes in. "
+            f"Never switch to English or any other language.\n\n"
+        )
+        base = lang_override + CHAT_SYSTEM_PROMPT
+    else:
+        base = CHAT_SYSTEM_PROMPT
+
+    # Append patient background only if there is meaningful data
+    age = (patient_info or {}).get("age")
+    gender = (patient_info or {}).get("gender")
+    medical_history = (patient_info or {}).get("medical_history")
+    current_medications = (patient_info or {}).get("current_medications")
+    if not any([age, gender, medical_history, current_medications]):
+        return base
+
+    patient_section = (
+        "\n\n=== Patient Background (already on file — do NOT ask for these again) ===\n"
+        f"Age: {age if age else 'Not provided'}\n"
+        f"Gender: {gender if gender else 'Not provided'}\n"
+        f"Known Medical History / Long-term Conditions: {medical_history if medical_history else 'None mentioned'}\n"
+        f"Current Medications (before this visit): {current_medications if current_medications else 'None mentioned'}\n"
+        "=== End of Patient Background ===\n"
+        "Use this context to ask more targeted symptom questions."
+    )
+    return base + patient_section
+
+
 async def chat_response(
     message: str,
     chat_history: list[dict],
@@ -38,16 +75,17 @@ async def chat_response(
     image_media_type: str | None = None,
 ) -> str:
     """Generate a conversational response to gather more symptom info."""
-
+    system_prompt = _build_chat_system_prompt(patient_info)
     try:
         response = bedrock_client.generate(
             BEDROCK_CHAT_MODEL, chat_history, message,
             image_b64=image_b64, image_media_type=image_media_type,
+            system_prompt=system_prompt,
         )
         return response
     except Exception as e:
         print(f"Bedrock chat error: {e}")
-        return _chat_using_hf(message, chat_history)
+        return _chat_using_hf(message, chat_history, system_prompt)
 
 
 # ── Final diagnosis from chat history ──────────────────────────────────────
@@ -58,6 +96,7 @@ async def generate_diagnosis_from_chat(
     current_medications: str = "",
     age: int | None = None,
     gender: str | None = None,
+    preferred_language: str | None = None,
 ) -> dict:
     """Generate a structured diagnosis from the full chat conversation."""
 
@@ -76,23 +115,24 @@ async def generate_diagnosis_from_chat(
 
 Based on the full conversation above, provide your preliminary diagnosis as JSON.
 """
+    diagnosis_prompt = get_diagnosis_system_prompt(preferred_language)
     try:
-        text = bedrock_client.generate_diagnosis_report( BEDROCK_REPORT_MODEL, transcript)
+        text = bedrock_client.generate_diagnosis_report(BEDROCK_REPORT_MODEL, transcript, system_prompt=diagnosis_prompt)
         if text.startswith("```"):
             text = text.split("\n", 1)[1]
             text = text.rsplit("```", 1)[0]
         return json.loads(text)
     except Exception as e:
         print(f"Bedrock diagnosis error: {e}")
-        return(_diagnosis_report_using_hf(transcript, chat_history))
+        return _diagnosis_report_using_hf(transcript, chat_history)
 
 
 
 # ── Demo fallbacks ─────────────────────────────────────────────────────────
 
-def _chat_using_hf(message: str, chat_history: list[dict]) -> str:
+def _chat_using_hf(message: str, chat_history: list[dict], system_prompt: str | None = None) -> str:
 
-    messages = [{"role": "system", "content": CHAT_SYSTEM_PROMPT}]
+    messages = [{"role": "system", "content": system_prompt or CHAT_SYSTEM_PROMPT}]
         
     for msg in chat_history:
         role = "user" if msg["role"] == "patient" else "assistant"
@@ -160,6 +200,107 @@ def _chat_demo_fallback(message: str, turn_count: int) -> str:
             "of your symptoms now. When you're ready, you can click 'Get Diagnosis' "
             "and I'll generate a preliminary report for a doctor to review."
         )
+
+
+async def explain_diagnosis(
+    report_context: str,
+    message: str | None,
+    chat_history: list[dict],
+    preferred_language: str | None = None,
+) -> str:
+    """Explain the doctor's final report in simple language. Stateless — chat_history from frontend."""
+    effective_message = (
+        message if message is not None
+        else "Please explain my diagnosis report in simple language that I can easily understand."
+    )
+    messages = list(chat_history) + [{"role": "user", "content": effective_message}]
+
+    # Build system prompt — explicit preferred_language overrides auto-detect
+    base_prompt = UNDERSTAND_DIAGNOSIS_PROMPT.format(report_context=report_context)
+    if preferred_language and preferred_language.strip().lower() != "english":
+        system_prompt = (
+            f"CRITICAL — LANGUAGE REQUIREMENT:\n"
+            f"The patient's preferred language is {preferred_language}. "
+            f"You MUST respond ENTIRELY in {preferred_language} for ALL messages, "
+            f"regardless of what language the patient writes in. "
+            f"Never mix languages or default to English.\n\n"
+        ) + base_prompt
+    else:
+        system_prompt = base_prompt
+
+    try:
+        return bedrock_client.understand_chat(BEDROCK_CHAT_MODEL, report_context, messages, system_prompt=system_prompt)
+    except Exception as e:
+        print(f"Bedrock explain_diagnosis error: {e}")
+        return _explain_diagnosis_fallback(message)
+
+
+def _explain_diagnosis_fallback(message: str | None) -> str:
+    if message is None:
+        return (
+            "Hello! I'm here to help you understand your medical report in simple language. "
+            "Your doctor has reviewed your case and provided a diagnosis and prescription. "
+            "Feel free to ask me any questions about your report."
+        )
+    return (
+        "I understand your question. Based on your doctor's report, I'll do my best to help. "
+        "If you need more clarity, please ask your doctor at your next visit."
+    )
+
+
+async def translate_message(message: str, preferred_language: str) -> str | None:
+    """Translate a single doctor message into the patient's preferred language.
+    Returns None on failure so callers can store None gracefully."""
+    content = (
+        f"Translate the following doctor's message to {preferred_language}. "
+        f"Keep the medical meaning accurate and use simple, reassuring language.\n\n"
+        f"Message: {message}"
+    )
+    system_prompt = (
+        f"You are a medical translator. Translate the given text from English to {preferred_language}. "
+        f"Return ONLY the translated text — no explanations, no quotes, no extra commentary."
+    )
+    try:
+        result = bedrock_client.generate_diagnosis_report(
+            BEDROCK_REPORT_MODEL, content, system_prompt=system_prompt
+        )
+        return result.strip() or None
+    except Exception as e:
+        print(f"translate_message error: {e}")
+        return None
+
+
+async def translate_final_report_fields(
+    final_diagnosis: str,
+    doctor_comments: str,
+    prescribed_medications: str,
+    dosage_instructions: str,
+    diet_lifestyle: str,
+    additional_instructions: str,
+    preferred_language: str,
+) -> dict:
+    """Translate doctor's final prescription fields into the patient's preferred language."""
+    content = (
+        f"Translate these medical prescription fields to {preferred_language}:\n\n"
+        f"Final Diagnosis: {final_diagnosis}\n"
+        f"Doctor's Comments: {doctor_comments or 'None'}\n"
+        f"Prescribed Medications: {prescribed_medications or 'None'}\n"
+        f"Dosage Instructions: {dosage_instructions or 'None'}\n"
+        f"Diet & Lifestyle: {diet_lifestyle or 'None'}\n"
+        f"Additional Instructions: {additional_instructions or 'None'}\n"
+    )
+    system_prompt = TRANSLATE_REPORT_FIELDS_PROMPT.format(language=preferred_language)
+    try:
+        text = bedrock_client.generate_diagnosis_report(
+            BEDROCK_REPORT_MODEL, content, system_prompt=system_prompt
+        )
+        if text.startswith("```"):
+            text = text.split("\n", 1)[1]
+            text = text.rsplit("```", 1)[0]
+        return json.loads(text)
+    except Exception as e:
+        print(f"translate_final_report_fields error: {e}")
+        return {}
 
 
 def _diagnosis_demo_fallback(symptoms: str) -> dict:

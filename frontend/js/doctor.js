@@ -272,7 +272,10 @@ registerRoute('/doctor/review/:id', async (app, params) => {
                             ${r.feedback_thread.map(msg => `
                                 <div class="chat-bubble ${msg.sender_role === 'doctor' ? 'assistant' : 'patient'}">
                                     <div class="bubble-label">${msg.sender_role === 'doctor' ? '🩺 You' : 'Patient'}</div>
-                                    ${msg.message}
+                                    ${msg.sender_role === 'patient' && msg.message_local
+                                        ? `<div>${msg.message_local}</div>
+                                           <div style="font-size:0.82rem;color:var(--text-muted);margin-top:0.4rem">${msg.message}</div>`
+                                        : msg.message}
                                     ${msg.attachment_url ? renderAttachmentDoctor(msg.attachment_url) : ''}
                                 </div>
                             `).join('')}
