@@ -772,6 +772,13 @@ registerRoute('/patient/chatroom/:id', async (app, params) => {
                 I'll help gather information for a doctor to review. What brings you here today?
             </div>
         </div>
+        <div id="voice-preview-bar" style="display:none;padding:0.5rem 1rem;background:var(--bg-card);border-top:1px solid var(--border-subtle);align-items:center;gap:0.75rem">
+            <span style="font-size:1rem;flex-shrink:0">🎙</span>
+            <audio id="voice-preview-audio" controls style="height:32px;flex:1;min-width:0;max-width:260px"></audio>
+            <button onclick="discardVoiceRecording()" title="Discard recording"
+                    style="background:none;border:none;cursor:pointer;font-size:1.2rem;color:var(--text-muted);padding:0.25rem 0.4rem;line-height:1;flex-shrink:0"
+                    onmouseover="this.style.color='#f43f5e'" onmouseout="this.style.color='var(--text-muted)'">✕</button>
+        </div>
         <div class="chat-input-area" id="chat-input-area">
             <label class="btn btn-secondary btn-sm" style="cursor:pointer;flex-shrink:0">
                 📎
@@ -909,6 +916,13 @@ window.toggleMicRecording = function () {
         _mediaRecorder.onstop = () => {
             if (_audioChunks.length > 0) {
                 _lastAudioBlob = new Blob(_audioChunks, { type: _mediaRecorder.mimeType || 'audio/webm' });
+                // Show WhatsApp-style preview bar so patient can listen before sending
+                const bar = document.getElementById('voice-preview-bar');
+                const previewAudio = document.getElementById('voice-preview-audio');
+                if (bar && previewAudio) {
+                    previewAudio.src = URL.createObjectURL(_lastAudioBlob);
+                    bar.style.display = 'flex';
+                }
             }
             stream.getTracks().forEach(t => t.stop());
             _mediaRecorder = null;
@@ -965,6 +979,16 @@ window.toggleMicRecording = function () {
     _recognition.start();
 };
 
+window.discardVoiceRecording = function () {
+    _lastAudioBlob = null;
+    const bar = document.getElementById('voice-preview-bar');
+    const previewAudio = document.getElementById('voice-preview-audio');
+    if (previewAudio) { previewAudio.pause(); previewAudio.src = ''; }
+    if (bar) bar.style.display = 'none';
+    const input = document.getElementById('chat-input');
+    if (input) { input.value = ''; input.focus(); }
+};
+
 window.handleChatFileSelect = function (input) {
     chatFileToUpload = input.files[0] || null;
     if (chatFileToUpload) showToast(`📎 ${chatFileToUpload.name} attached`, 'info');
@@ -998,6 +1022,11 @@ window.sendChatMessage = async function (reportId) {
         audioHtml = `<audio controls src="${audioUrl}"
             style="display:block;margin-top:0.4rem;height:36px;width:190px;opacity:0.85"></audio>`;
         _lastAudioBlob = null;
+        // Hide the preview bar
+        const previewAudio = document.getElementById('voice-preview-audio');
+        const bar = document.getElementById('voice-preview-bar');
+        if (previewAudio) { previewAudio.pause(); previewAudio.src = ''; }
+        if (bar) bar.style.display = 'none';
     }
 
     messagesDiv.innerHTML += `
