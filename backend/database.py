@@ -218,6 +218,24 @@ async def create_diagnosis_report(
         await db.close()
 
 
+async def delete_stale_chat_sessions(patient_id: int) -> None:
+    """Delete all chatting-status reports for a patient (abandoned sessions)."""
+    db = await get_db()
+    try:
+        cursor = await db.execute(
+            "SELECT id FROM diagnosis_reports WHERE patient_id = ? AND status = 'chatting'",
+            (patient_id,),
+        )
+        rows = await cursor.fetchall()
+        for row in rows:
+            stale_id = row["id"]
+            await db.execute("DELETE FROM chat_messages WHERE report_id = ?", (stale_id,))
+            await db.execute("DELETE FROM diagnosis_reports WHERE id = ?", (stale_id,))
+        await db.commit()
+    finally:
+        await db.close()
+
+
 async def create_chat_session(
     patient_id: int,
     medical_history: str = "",

@@ -42,6 +42,7 @@ def _image_from_attachment(attachment_url: str | None) -> tuple[str | None, str 
     return b64, media_type
 from database import (
     create_chat_session,
+    delete_stale_chat_sessions,
     save_chat_message,
     get_chat_history,
     get_report_by_id,
@@ -63,6 +64,9 @@ async def start_chat(data: StartChat, user: dict = Depends(get_current_user)):
     """Start a new chat session — creates a shell report and returns its ID."""
     if user["role"] != "patient":
         raise HTTPException(status_code=403, detail="Only patients can start chats")
+
+    # Clean up any abandoned chatting sessions before creating a new one
+    await delete_stale_chat_sessions(user["user_id"])
 
     patient_profile = await get_user_by_id(user["user_id"])
     report_id = await create_chat_session(

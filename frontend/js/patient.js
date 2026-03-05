@@ -108,6 +108,9 @@ registerRoute('/patient', async (app) => {
 
     try {
         const data = await apiFetch('/api/patient/reports');
+        // Exclude abandoned chat sessions — they have no diagnosis and are cleaned
+        // up automatically the next time the patient starts a new chat.
+        data.reports = (data.reports || []).filter(r => r.status !== 'chatting');
         const area = document.getElementById('reports-area');
 
         if (!data.reports || data.reports.length === 0) {
