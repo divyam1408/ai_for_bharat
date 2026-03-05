@@ -272,6 +272,23 @@ async def delete_report(report_id: int, user: dict = Depends(get_current_user)):
     return {"message": "Report deleted successfully"}
 
 
+@router.get("/profile")
+async def get_profile(user: dict = Depends(get_current_user)):
+    """Get the logged-in patient's profile details."""
+    if user["role"] != "patient":
+        raise HTTPException(status_code=403, detail="Only patients can access this")
+    profile = await get_user_by_id(user["user_id"])
+    if not profile:
+        raise HTTPException(status_code=404, detail="User not found")
+    return {
+        "name":       profile["name"],
+        "email":      profile["email"],
+        "age":        profile.get("age"),
+        "gender":     profile.get("gender"),
+        "created_at": profile.get("created_at"),
+    }
+
+
 @router.post("/understand-report/{report_id}")
 async def understand_report(
     report_id: int,

@@ -4,6 +4,39 @@
 
 // ── Doctor Dashboard ──────────────────────────────────────────────────────
 
+let _myDoctorReports = [];
+
+window.applyDoctorFilter = function(filter) {
+    document.querySelectorAll('#doctor-filter-pills .filter-pill').forEach(p => {
+        p.classList.toggle('active', p.dataset.filter === filter);
+    });
+
+    let filtered;
+    if (filter === 'completed') {
+        filtered = _myDoctorReports.filter(r => r.status === 'completed');
+    } else if (filter === 'in_progress') {
+        filtered = _myDoctorReports.filter(r =>
+            r.status === 'under_review' ||
+            (r.status === 'pending_review' && r.doctor_id)
+        );
+    } else if (filter === 'awaiting') {
+        filtered = _myDoctorReports.filter(r => r.status === 'feedback_requested');
+    } else {
+        filtered = _myDoctorReports;
+    }
+
+    const grid = document.getElementById('doctor-reports-grid');
+    if (!grid) return;
+    if (filtered.length === 0) {
+        grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1;padding:2rem">
+            <div class="empty-state-icon">🔍</div>
+            <p class="empty-state-text">No reports in this category</p>
+        </div>`;
+    } else {
+        grid.innerHTML = filtered.map(r => renderMyReportCard(r)).join('');
+    }
+};
+
 registerRoute('/doctor', async (app) => {
     const user = getUser();
     if (!user || user.role !== 'doctor') { navigate('/login'); return; }
@@ -68,22 +101,37 @@ registerRoute('/doctor', async (app) => {
                     <p style="color:var(--text-muted)">Start reviewing reports from the available reports section above.</p>
                 </div>`;
         } else {
+            _myDoctorReports = myData.reports;
+
             const completed = myData.reports.filter(r => r.status === 'completed').length;
             const feedback = myData.reports.filter(r => r.status === 'feedback_requested').length;
             const inProgress = myData.reports.filter(r => r.status === 'pending_review' || r.status === 'under_review').length;
 
             myArea.innerHTML = `
-                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
-                    <h2 style="font-size:1.2rem">🗂️ My Cases</h2>
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem">
+                    <h2 style="font-size:1.2rem;margin:0">🗂️ My Cases</h2>
                     <div style="display:flex;gap:1rem;font-size:0.85rem;color:var(--text-muted)">
                         <span>✅ ${completed} Completed</span>
                         ${feedback > 0 ? `<span>🔄 ${feedback} Awaiting Patient</span>` : ''}
                         ${inProgress > 0 ? `<span>⏳ ${inProgress} In Progress</span>` : ''}
                     </div>
                 </div>
-                <div class="card-grid">
+                <div class="filter-pills" id="doctor-filter-pills">
+                    <button class="filter-pill active" data-filter="all" onclick="applyDoctorFilter('all')">All</button>
+                    <button class="filter-pill" data-filter="completed" onclick="applyDoctorFilter('completed')">✅ Completed</button>
+                    <button class="filter-pill" data-filter="in_progress" onclick="applyDoctorFilter('in_progress')">⏳ In Progress</button>
+                    <button class="filter-pill" data-filter="awaiting" onclick="applyDoctorFilter('awaiting')">🔄 Awaiting Patient</button>
+                </div>
+                <div class="card-grid" id="doctor-reports-grid">
                     ${myData.reports.map(r => renderMyReportCard(r)).join('')}
                 </div>`;
+
+            // Auto-apply filter if navigated from profile page
+            if (window._doctorFilterOnLoad) {
+                const f = window._doctorFilterOnLoad;
+                window._doctorFilterOnLoad = null;
+                applyDoctorFilter(f);
+            }
         }
     } catch (err) {
         showToast(err.message, 'error');
@@ -820,3 +868,95 @@ window.printPrescriptionDoctor = async function (reportId) {
         showToast('Failed to generate prescription: ' + err.message, 'error');
     }
 };
+
+// ── Doctor Profile ────────────────────────────────────────────────────────
+
+registerRoute('/doctor/profile', async (app) => {
+    const user = getUser();
+    if (!user || user.role !== 'doctor') { navigate('/login'); return; }
+
+    app.innerHTML = renderNavbar('doctor') + `
+    <div class="page-container" style="max-width:600px;margin:0 auto">
+        <div class="page-header">
+            <div>
+                <h1 class="page-title">My Profile</h1>
+                <p class="page-subtitle">Your doctor account and case statistics</p>
+            </div>
+        </div>
+        <div id="doctor-profile-area">
+            <div class="empty-state">
+                <div class="spinner" style="width:32px;height:32px;border-width:3px;margin:0 auto"></div>
+                <p style="margin-top:1rem;color:var(--text-muted)">Loading profile...</p>
+            </div>
+        </div>
+    </div>`;
+
+    try {
+        const [profile, myData] = await Promise.all([
+            apiFetch('/api/doctor/profile'),
+            apiFetch('/api/doctor/my-reports'),
+        ]);
+
+        const reports    = myData.reports || [];
+        const total      = reports.length;
+        const completed  = reports.filter(r => r.status === 'completed').length;
+        const inProgress = reports.filter(r =>
+            r.status === 'under_review' ||
+            (r.status === 'pending_review' && r.doctor_id)
+        ).length;
+        const awaiting   = reports.filter(r => r.status === 'feedback_requested').length;
+
+        const initials = profile.name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
+
+        let memberSince = '—';
+        if (profile.created_at) {
+            memberSince = new Date(profile.created_at).toLocaleDateString('en-IN', {
+                day: 'numeric', month: 'long', year: 'numeric'
+            });
+        }
+
+        document.getElementById('doctor-profile-area').innerHTML = `
+            <div class="card" style="padding:2rem;margin-bottom:1.5rem">
+                <div style="display:flex;align-items:center;gap:1.25rem;margin-bottom:1.75rem">
+                    <div style="width:64px;height:64px;border-radius:50%;background:var(--accent-teal);
+                                display:flex;align-items:center;justify-content:center;
+                                font-size:1.4rem;font-weight:700;color:#fff;flex-shrink:0">
+                        ${initials}
+                    </div>
+                    <div>
+                        <div style="font-size:1.25rem;font-weight:700">Dr. ${profile.name}</div>
+                        <div style="color:var(--text-secondary);font-size:0.875rem">${profile.email}</div>
+                        <div style="color:var(--text-muted);font-size:0.8rem;margin-top:0.2rem">Member since ${memberSince}</div>
+                    </div>
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem">
+                    <div class="profile-detail-item" style="grid-column:1/-1">
+                        <div class="profile-detail-label">Specialization</div>
+                        <div class="profile-detail-value">${profile.specialization || '—'}</div>
+                    </div>
+                </div>
+            </div>
+
+            <h2 style="font-size:1rem;font-weight:600;margin-bottom:0.75rem;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.05em">Case Summary</h2>
+            <div class="stats-row" style="margin-bottom:1.5rem">
+                <div class="card stat-card" style="cursor:pointer" onclick="window._doctorFilterOnLoad='all';navigate('/doctor')" title="View all cases">
+                    <div class="stat-value">${total}</div>
+                    <div class="stat-label">Total Cases</div>
+                </div>
+                <div class="card stat-card" style="cursor:pointer" onclick="window._doctorFilterOnLoad='completed';navigate('/doctor')" title="View completed cases">
+                    <div class="stat-value">${completed}</div>
+                    <div class="stat-label">Completed</div>
+                </div>
+                <div class="card stat-card" style="cursor:pointer" onclick="window._doctorFilterOnLoad='in_progress';navigate('/doctor')" title="View in-progress cases">
+                    <div class="stat-value">${inProgress}</div>
+                    <div class="stat-label">In Progress</div>
+                </div>
+                <div class="card stat-card" style="cursor:pointer" onclick="window._doctorFilterOnLoad='awaiting';navigate('/doctor')" title="View cases awaiting patient">
+                    <div class="stat-value">${awaiting}</div>
+                    <div class="stat-label">Awaiting Patient</div>
+                </div>
+            </div>`;
+    } catch (err) {
+        showToast(err.message, 'error');
+    }
+});

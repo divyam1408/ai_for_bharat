@@ -49,6 +49,40 @@ function renderAttachment(url) {
 
 // ── Patient Dashboard ─────────────────────────────────────────────────────
 
+let _patientDashReports = [];
+
+window.applyPatientFilter = function(filter) {
+    document.querySelectorAll('#patient-filter-pills .filter-pill').forEach(p => {
+        p.classList.toggle('active', p.dataset.filter === filter);
+    });
+
+    let filtered;
+    if (filter === 'completed') {
+        filtered = _patientDashReports.filter(r => r.status === 'completed');
+    } else if (filter === 'in_review') {
+        filtered = _patientDashReports.filter(r =>
+            (r.status === 'pending_review' && r.doctor_id) ||
+            r.status === 'under_review' ||
+            r.status === 'feedback_requested'
+        );
+    } else if (filter === 'waiting') {
+        filtered = _patientDashReports.filter(r => r.status === 'pending_review' && !r.doctor_id);
+    } else {
+        filtered = _patientDashReports;
+    }
+
+    const grid = document.getElementById('patient-reports-grid');
+    if (!grid) return;
+    if (filtered.length === 0) {
+        grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1;padding:2rem">
+            <div class="empty-state-icon">🔍</div>
+            <p class="empty-state-text">No reports in this category</p>
+        </div>`;
+    } else {
+        grid.innerHTML = filtered.map(r => renderReportCard(r)).join('');
+    }
+};
+
 registerRoute('/patient', async (app) => {
     const user = getUser();
     if (!user || user.role !== 'patient') { navigate('/login'); return; }
@@ -91,10 +125,18 @@ registerRoute('/patient', async (app) => {
             return;
         }
 
+        _patientDashReports = data.reports;
+
         const total = data.reports.length;
         const completed = data.reports.filter(r => r.status === 'completed').length;
         const feedback = data.reports.filter(r => r.status === 'feedback_requested').length;
         const pending = data.reports.filter(r => r.status === 'pending_review').length;
+        const inReview = data.reports.filter(r =>
+            (r.status === 'pending_review' && r.doctor_id) ||
+            r.status === 'under_review' ||
+            r.status === 'feedback_requested'
+        ).length;
+        const waiting = data.reports.filter(r => r.status === 'pending_review' && !r.doctor_id).length;
 
         area.innerHTML = `
             <div class="stats-row">
@@ -116,10 +158,30 @@ registerRoute('/patient', async (app) => {
                     <div class="stat-label">Needs Your Response</div>
                 </div>` : ''}
             </div>
-            <h2 style="font-size:1.2rem;margin-bottom:1rem">Your Reports</h2>
-            <div class="card-grid">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem">
+                <h2 style="font-size:1.2rem;margin:0">Your Reports</h2>
+                <div style="display:flex;gap:1rem;font-size:0.85rem;color:var(--text-muted)">
+                    <span>✅ ${completed} Completed</span>
+                    ${inReview > 0 ? `<span>👨‍⚕️ ${inReview} In Review</span>` : ''}
+                    ${waiting > 0 ? `<span>⏰ ${waiting} Waiting</span>` : ''}
+                </div>
+            </div>
+            <div class="filter-pills" id="patient-filter-pills">
+                <button class="filter-pill active" data-filter="all" onclick="applyPatientFilter('all')">All</button>
+                <button class="filter-pill" data-filter="completed" onclick="applyPatientFilter('completed')">✅ Completed</button>
+                <button class="filter-pill" data-filter="in_review" onclick="applyPatientFilter('in_review')">👨‍⚕️ In Review</button>
+                <button class="filter-pill" data-filter="waiting" onclick="applyPatientFilter('waiting')">⏰ Waiting for a Doctor</button>
+            </div>
+            <div class="card-grid" id="patient-reports-grid">
                 ${data.reports.map(r => renderReportCard(r)).join('')}
             </div>`;
+
+        // Auto-apply filter if navigated from profile page
+        if (window._patientFilterOnLoad) {
+            const f = window._patientFilterOnLoad;
+            window._patientFilterOnLoad = null;
+            applyPatientFilter(f);
+        }
     } catch (err) {
         showToast(err.message, 'error');
     }
@@ -1373,4 +1435,107 @@ registerRoute('/patient/understand/:id', async (app, params) => {
         input.focus();
         messagesDiv.scrollTop = messagesDiv.scrollHeight;
     };
+});
+
+// ── Patient Profile ────────────────────────────────────────────────────────
+
+registerRoute('/patient/profile', async (app) => {
+    const user = getUser();
+    if (!user || user.role !== 'patient') { navigate('/login'); return; }
+
+    app.innerHTML = renderNavbar('patient') + `
+    <div class="page-container" style="max-width:600px;margin:0 auto">
+        <div class="page-header">
+            <div>
+                <h1 class="page-title">My Profile</h1>
+                <p class="page-subtitle">Your personal health account details</p>
+            </div>
+        </div>
+        <div id="profile-area">
+            <div class="empty-state">
+                <div class="spinner" style="width:32px;height:32px;border-width:3px;margin:0 auto"></div>
+                <p style="margin-top:1rem;color:var(--text-muted)">Loading profile...</p>
+            </div>
+        </div>
+    </div>`;
+
+    try {
+        const [profile, reportsData] = await Promise.all([
+            apiFetch('/api/patient/profile'),
+            apiFetch('/api/patient/reports'),
+        ]);
+
+        const reports   = reportsData.reports || [];
+        const total     = reports.length;
+        const completed = reports.filter(r => r.status === 'completed').length;
+        const inReview  = reports.filter(r =>
+            (r.status === 'pending_review' && r.doctor_id) ||
+            r.status === 'under_review' ||
+            r.status === 'feedback_requested'
+        ).length;
+        const waiting   = reports.filter(r => r.status === 'pending_review' && !r.doctor_id).length;
+
+        const initials = profile.name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
+
+        const genderLabel = { male: 'Male', female: 'Female', other: 'Other' }[profile.gender] || '—';
+
+        let memberSince = '—';
+        if (profile.created_at) {
+            const d = new Date(profile.created_at);
+            memberSince = d.toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' });
+        }
+
+        document.getElementById('profile-area').innerHTML = `
+            <div class="card" style="padding:2rem;margin-bottom:1.5rem">
+                <div style="display:flex;align-items:center;gap:1.25rem;margin-bottom:1.75rem">
+                    <div style="width:64px;height:64px;border-radius:50%;background:var(--accent-blue);
+                                display:flex;align-items:center;justify-content:center;
+                                font-size:1.4rem;font-weight:700;color:#fff;flex-shrink:0">
+                        ${initials}
+                    </div>
+                    <div>
+                        <div style="font-size:1.25rem;font-weight:700">${profile.name}</div>
+                        <div style="color:var(--text-secondary);font-size:0.875rem">${profile.email}</div>
+                        <div style="color:var(--text-muted);font-size:0.8rem;margin-top:0.2rem">Member since ${memberSince}</div>
+                    </div>
+                </div>
+
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem">
+                    <div class="profile-detail-item">
+                        <div class="profile-detail-label">Age</div>
+                        <div class="profile-detail-value">${profile.age != null ? profile.age + ' years' : '—'}</div>
+                    </div>
+                    <div class="profile-detail-item">
+                        <div class="profile-detail-label">Gender</div>
+                        <div class="profile-detail-value">${genderLabel}</div>
+                    </div>
+                </div>
+            </div>
+
+            <h2 style="font-size:1rem;font-weight:600;margin-bottom:0.75rem;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.05em">Health Summary</h2>
+            <div class="stats-row" style="margin-bottom:1.5rem">
+                <div class="card stat-card" style="cursor:pointer" onclick="window._patientFilterOnLoad='all';navigate('/patient')" title="View all reports">
+                    <div class="stat-value">${total}</div>
+                    <div class="stat-label">Total Reports</div>
+                </div>
+                <div class="card stat-card" style="cursor:pointer" onclick="window._patientFilterOnLoad='completed';navigate('/patient')" title="View completed reports">
+                    <div class="stat-value">${completed}</div>
+                    <div class="stat-label">Completed</div>
+                </div>
+                <div class="card stat-card" style="cursor:pointer" onclick="window._patientFilterOnLoad='in_review';navigate('/patient')" title="View reports in review">
+                    <div class="stat-value">${inReview}</div>
+                    <div class="stat-label">In Review</div>
+                </div>
+                <div class="card stat-card" style="cursor:pointer" onclick="window._patientFilterOnLoad='waiting';navigate('/patient')" title="View reports waiting for a doctor">
+                    <div class="stat-value">${waiting}</div>
+                    <div class="stat-label">Waiting for Doctor</div>
+                </div>
+            </div>
+
+            <button class="btn btn-teal btn-lg" style="width:100%" onclick="navigate('/patient/chat')">
+                💬 Start New Diagnosis
+            </button>`;
+    } catch (err) {
+        showToast(err.message, 'error');
+    }
 });

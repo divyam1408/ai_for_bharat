@@ -401,6 +401,27 @@ a:hover {
     font-size: 0.85rem;
 }
 
+.profile-detail-item {
+    background: var(--bg-glass);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    padding: 0.75rem 1rem;
+}
+
+.profile-detail-label {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 0.2rem;
+}
+
+.profile-detail-value {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
 .required-mark {
     color: #ef4444;
     margin-left: 2px;
@@ -1285,6 +1306,40 @@ a:hover {
     border-color: var(--accent-rose);
     color: var(--accent-rose);
     animation: mic-pulse 1.2s ease-in-out infinite;
+}
+
+/* ── Filter Pills ─────────────────────────────────────────────────────── */
+
+.filter-pills {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    margin-bottom: 1rem;
+}
+
+.filter-pill {
+    padding: 0.35rem 0.9rem;
+    border-radius: 999px;
+    border: 1px solid var(--border-subtle);
+    background: var(--bg-glass);
+    color: var(--text-secondary);
+    font-size: 0.82rem;
+    cursor: pointer;
+    transition: all 0.18s;
+    white-space: nowrap;
+}
+
+.filter-pill:hover {
+    background: var(--bg-glass-hover);
+    color: var(--text-primary);
+    border-color: rgba(255,255,255,0.15);
+}
+
+.filter-pill.active {
+    background: rgba(59,130,246,0.15);
+    border-color: var(--accent-blue);
+    color: var(--accent-blue);
+    font-weight: 500;
 }
 
 @keyframes mic-pulse {

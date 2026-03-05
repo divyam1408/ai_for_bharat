@@ -7,12 +7,26 @@ from database import (
     get_pending_reports, get_report_by_id, create_final_report,
     get_chat_history, get_doctor_patient_messages,
     save_doctor_patient_message, update_report_status,
-    get_doctor_reports,
+    get_doctor_reports, get_user_by_id,
 )
 from services.ai_research import research_chat
 from services.ai_doctor import translate_final_report_fields, translate_message
 
 router = APIRouter(prefix="/api/doctor", tags=["doctor"])
+
+
+@router.get("/profile")
+async def get_doctor_profile(user: dict = Depends(get_current_user)):
+    """Get the authenticated doctor's profile."""
+    if user["role"] != "doctor":
+        raise HTTPException(status_code=403, detail="Only doctors can access this")
+    profile = await get_user_by_id(user["user_id"])
+    return {
+        "name": profile["name"],
+        "email": profile["email"],
+        "specialization": profile.get("specialization"),
+        "created_at": profile.get("created_at"),
+    }
 
 
 @router.get("/pending")

@@ -183,9 +183,10 @@ function renderNavbar(role) {
         <div class="navbar-actions">
             ${isPatient ? `
                 <button class="btn btn-sm btn-secondary" onclick="navigate('/patient')">Dashboard</button>
-                <button class="btn btn-sm btn-teal" onclick="navigate('/patient/chat')">New Diagnosis</button>
+                <button class="btn btn-sm btn-secondary" onclick="navigate('/patient/profile')">My Profile</button>
             ` : `
                 <button class="btn btn-sm btn-secondary" onclick="navigate('/doctor')">Dashboard</button>
+                <button class="btn btn-sm btn-secondary" onclick="navigate('/doctor/profile')">My Profile</button>
             `}
             <span class="navbar-user">👤 ${user?.name || ''}</span>
             <button class="btn btn-sm btn-secondary" onclick="logout()">Logout</button>
