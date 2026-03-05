@@ -51,6 +51,7 @@ from database import (
     save_doctor_patient_message,
     update_report_status,
     get_user_by_id,
+    create_doctor_notification,
 )
 from services.ai_doctor import chat_response, generate_diagnosis_from_chat, explain_diagnosis, translate_message
 
@@ -264,8 +265,17 @@ async def delete_report(report_id: int, user: dict = Depends(get_current_user)):
         raise HTTPException(status_code=404, detail="Report not found")
     if report["patient_id"] != user["user_id"]:
         raise HTTPException(status_code=403, detail="Access denied")
-    
-    # Allow deletion of reports in any status for patient's own reports
+
+    # Notify the assigned doctor before deleting
+    if report.get("doctor_id"):
+        patient = await get_user_by_id(user["user_id"])
+        patient_name = patient["name"] if patient else "A patient"
+        condition = report.get("primary_condition") or f"Report #{report_id}"
+        await create_doctor_notification(
+            report["doctor_id"],
+            f"{patient_name} deleted report #{report_id} ({condition}) which you were reviewing.",
+        )
+
     from database import delete_report as db_delete_report
     await db_delete_report(report_id)
 

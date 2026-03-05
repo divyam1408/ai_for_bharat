@@ -54,6 +54,23 @@ registerRoute('/doctor', async (app) => {
     </div>`;
 
     try {
+        // Check for notifications (patient deleted a report under review)
+        const notifData = await apiFetch('/api/doctor/notifications');
+        if (notifData.notifications?.length) {
+            const container = document.querySelector('.page-container');
+            const banner = document.createElement('div');
+            banner.style.cssText = 'background:rgba(245,158,11,0.12);border:1px solid rgba(245,158,11,0.35);border-radius:var(--radius-md);padding:1rem 1.25rem;margin-bottom:1.5rem';
+            banner.innerHTML = `
+                <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:1rem">
+                    <div>
+                        <div style="font-weight:600;color:var(--accent-amber);margin-bottom:0.4rem">🔔 ${notifData.notifications.length} notification${notifData.notifications.length > 1 ? 's' : ''}</div>
+                        ${notifData.notifications.map(n => `<div style="font-size:0.875rem;color:var(--text-secondary);margin-bottom:0.2rem">• ${n.message}</div>`).join('')}
+                    </div>
+                    <button onclick="this.parentElement.parentElement.remove()" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:1.1rem;flex-shrink:0">✕</button>
+                </div>`;
+            container.insertBefore(banner, container.firstChild);
+        }
+
         // Load pending reports count for the clickable section
         const pendingData = await apiFetch('/api/doctor/pending');
         const availableSection = document.getElementById('available-reports-section');

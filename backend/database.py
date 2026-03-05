@@ -107,6 +107,15 @@ async def init_db():
                 created_at TEXT NOT NULL DEFAULT (datetime('now')),
                 FOREIGN KEY (report_id) REFERENCES diagnosis_reports(id)
             );
+
+            CREATE TABLE IF NOT EXISTS doctor_notifications (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                doctor_id INTEGER NOT NULL,
+                message TEXT NOT NULL,
+                is_read INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                FOREIGN KEY (doctor_id) REFERENCES users(id)
+            );
         """)
         await db.commit()
 
@@ -515,6 +524,47 @@ async def delete_report(report_id: int) -> None:
         await db.execute("DELETE FROM doctor_patient_messages WHERE report_id = ?", (report_id,))
         await db.execute("DELETE FROM final_reports WHERE report_id = ?", (report_id,))
         await db.execute("DELETE FROM diagnosis_reports WHERE id = ?", (report_id,))
+        await db.commit()
+    finally:
+        await db.close()
+
+
+async def create_doctor_notification(doctor_id: int, message: str) -> None:
+    """Insert a notification for a doctor."""
+    db = await get_db()
+    try:
+        await db.execute(
+            "INSERT INTO doctor_notifications (doctor_id, message) VALUES (?, ?)",
+            (doctor_id, message),
+        )
+        await db.commit()
+    finally:
+        await db.close()
+
+
+async def get_unread_doctor_notifications(doctor_id: int) -> list[dict]:
+    """Return all unread notifications for a doctor."""
+    db = await get_db()
+    try:
+        cursor = await db.execute(
+            "SELECT id, message, created_at FROM doctor_notifications "
+            "WHERE doctor_id = ? AND is_read = 0 ORDER BY created_at DESC",
+            (doctor_id,),
+        )
+        rows = await cursor.fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        await db.close()
+
+
+async def mark_doctor_notifications_read(doctor_id: int) -> None:
+    """Mark all notifications for a doctor as read."""
+    db = await get_db()
+    try:
+        await db.execute(
+            "UPDATE doctor_notifications SET is_read = 1 WHERE doctor_id = ?",
+            (doctor_id,),
+        )
         await db.commit()
     finally:
         await db.close()

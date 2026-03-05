@@ -212,7 +212,7 @@ function renderReportCard(r) {
     <div class="card" style="position:relative">
         <button class="btn btn-secondary btn-sm" 
                 style="position:absolute;top:0.75rem;right:0.75rem;padding:0.25rem 0.5rem;font-size:0.75rem"
-                onclick="event.stopPropagation();deleteReport(${r.id})"
+                onclick="event.stopPropagation();deleteReport(${r.id},'${r.status}',${r.doctor_id ? 1 : 0})"
                 title="Delete this report">
             🗑️
         </button>        <div onclick="navigate('/patient/report/${r.id}')" style="cursor:pointer">
@@ -295,9 +295,10 @@ registerRoute('/patient/report/:id', async (app, params) => {
                 <button class="btn btn-secondary btn-sm" onclick="navigate('/patient')">
                     ← Back to Dashboard
                 </button>
-                <button class="btn btn-secondary btn-sm" onclick="deleteReport(${r.id})" 
+                <button class="btn btn-secondary btn-sm" onclick="deleteReport(${r.id},'${r.status}',${r.doctor_id ? 1 : 0})"
                         style="color:var(--accent-rose)" title="Delete this report">
-                    🗑️ Delete Report                </button>
+                    🗑️ Delete Report
+                </button>
             </div>
 
             <h1 class="page-title">Diagnosis Report #${r.id}</h1>
@@ -1242,10 +1243,22 @@ function escapeHtml(text) {
 
 // ── Delete Report ─────────────────────────────────────────────────────────
 
-window.deleteReport = async function (reportId) {
-    if (!confirm('Are you sure you want to delete this report? This action cannot be undone.')) {
-        return;
+window.deleteReport = async function (reportId, status = '', hasDoctorId = 0) {
+    const isInReview = hasDoctorId ||
+        status === 'under_review' ||
+        status === 'feedback_requested';
+    const isCompleted = status === 'completed';
+
+    let confirmMsg;
+    if (isCompleted) {
+        confirmMsg = 'This report has already been reviewed by the doctor and a prescription is available.\n\nAre you sure you want to permanently delete it?';
+    } else if (isInReview) {
+        confirmMsg = 'This report is currently being reviewed by a doctor.\n\nDeleting it will remove all data and the doctor will be notified. Are you sure?';
+    } else {
+        confirmMsg = 'Are you sure you want to delete this report? This action cannot be undone.';
     }
+
+    if (!confirm(confirmMsg)) return;
 
     try {
         await apiFetch(`/api/patient/report/${reportId}`, { method: 'DELETE' });

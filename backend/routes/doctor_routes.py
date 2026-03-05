@@ -8,6 +8,7 @@ from database import (
     get_chat_history, get_doctor_patient_messages,
     save_doctor_patient_message, update_report_status,
     get_doctor_reports, get_user_by_id,
+    get_unread_doctor_notifications, mark_doctor_notifications_read,
 )
 from services.ai_research import research_chat
 from services.ai_doctor import translate_final_report_fields, translate_message
@@ -27,6 +28,17 @@ async def get_doctor_profile(user: dict = Depends(get_current_user)):
         "specialization": profile.get("specialization"),
         "created_at": profile.get("created_at"),
     }
+
+
+@router.get("/notifications")
+async def get_notifications(user: dict = Depends(get_current_user)):
+    """Get unread notifications for the doctor and mark them as read."""
+    if user["role"] != "doctor":
+        raise HTTPException(status_code=403, detail="Only doctors can access this")
+    notifications = await get_unread_doctor_notifications(user["user_id"])
+    if notifications:
+        await mark_doctor_notifications_read(user["user_id"])
+    return {"notifications": notifications}
 
 
 @router.get("/pending")
