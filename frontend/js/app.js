@@ -3,9 +3,9 @@
    ══════════════════════════════════════════════════════════════════════════ */
 
 //window.API_BASE = 'https://cycq1wk7n3.execute-api.ap-south-1.amazonaws.com';  // same origin
-//window.API_BASE = '';  // same origin
+window.API_BASE = '';  // same origin
 //window.API_BASE = 'http://52.66.108.187:8000';
-window.API_BASE = 'https://d2df2cxhh3eeoh.cloudfront.net'
+//window.API_BASE = 'https://d2df2cxhh3eeoh.cloudfront.net'
 // ── State ─────────────────────────────────────────────────────────────────
 
 function getToken() { return localStorage.getItem('token'); }
@@ -37,6 +37,7 @@ async function apiFetch(path, options = {}) {
 
 function showToast(message, type = 'info') {
     const container = document.getElementById('toast-container');
+    container.querySelectorAll(`.toast-${type}`).forEach(t => t.remove());
     const toast = document.createElement('div');
     toast.className = `toast toast-${type}`;
     toast.textContent = message;

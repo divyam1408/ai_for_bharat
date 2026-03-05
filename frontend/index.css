@@ -322,6 +322,16 @@ a:hover {
     box-shadow: 0 0 0 3px var(--accent-blue-glow);
 }
 
+.form-input.input-error {
+    border-color: #ef4444;
+    box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.2);
+}
+
+.form-input.input-error:focus {
+    border-color: #ef4444;
+    box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.2);
+}
+
 .form-input::placeholder,
 .form-textarea::placeholder {
     color: var(--text-muted);
@@ -389,6 +399,18 @@ a:hover {
     margin-top: 1.5rem;
     color: var(--text-secondary);
     font-size: 0.85rem;
+}
+
+.required-mark {
+    color: #ef4444;
+    margin-left: 2px;
+    font-weight: 600;
+}
+
+.dob-picker {
+    display: grid;
+    grid-template-columns: 1fr 1.5fr 1fr;
+    gap: 0.5rem;
 }
 
 .auth-tabs {
