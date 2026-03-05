@@ -400,7 +400,7 @@ registerRoute('/patient/report/:id', async (app, params) => {
             </div>` : ''}
 
             ${r.status === 'feedback_requested' ? `
-            <div class="card" style="margin-top:1.5rem;border-color:rgba(245,158,11,0.4);box-shadow:0 0 20px rgba(245,158,11,0.1)">
+            <div id="feedback-response-card" class="card" style="margin-top:1.5rem;border-color:rgba(245,158,11,0.4);box-shadow:0 0 20px rgba(245,158,11,0.1)">
                 <h3 class="card-title" style="color:var(--accent-amber);margin-bottom:1rem">📝 Respond to Doctor</h3>
                 <p style="color:var(--text-secondary);font-size:0.85rem;margin-bottom:1rem">
                     The doctor has requested additional information. Please provide your response below.
@@ -602,10 +602,22 @@ window.sendPatientResponse = async function (reportId) {
             method: 'POST',
             body: JSON.stringify({ message, attachment_url: attachmentUrl }),
         });
-        btn.disabled = false;
-        btn.textContent = 'Send Response';
-        showToast('Response sent to doctor!', 'success');
-        navigate(`/patient/report/${reportId}`);
+
+        const card = document.getElementById('feedback-response-card');
+        if (card) {
+            card.style.borderColor = 'rgba(34,197,94,0.4)';
+            card.style.boxShadow = '0 0 20px rgba(34,197,94,0.1)';
+            card.innerHTML = `
+                <div style="text-align:center;padding:1.5rem 1rem">
+                    <div style="font-size:2.5rem;margin-bottom:0.75rem">✅</div>
+                    <h3 style="font-size:1.1rem;font-weight:600;color:var(--accent-green);margin-bottom:0.5rem">Response Sent!</h3>
+                    <p style="color:var(--text-secondary);font-size:0.9rem;margin-bottom:1.5rem">
+                        Your response has been sent to the doctor. They'll review it and get back to you.
+                    </p>
+                    ${attachmentUrl ? `<p style="color:var(--text-muted);font-size:0.8rem;margin-bottom:1.25rem">📎 Attachment included</p>` : ''}
+                    <button class="btn btn-secondary" onclick="navigate('/patient')">← Back to Dashboard</button>
+                </div>`;
+        }
     } catch (err) {
         showToast(err.message, 'error');
         btn.disabled = false;
