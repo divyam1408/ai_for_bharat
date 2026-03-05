@@ -1250,7 +1250,13 @@ window.deleteReport = async function (reportId) {
     try {
         await apiFetch(`/api/patient/report/${reportId}`, { method: 'DELETE' });
         showToast('Report deleted successfully', 'success');
-        navigate('/patient');
+        // If already on the dashboard the hash won't change so hashchange won't fire;
+        // call handleRoute() directly to force a re-fetch and re-render.
+        if (document.getElementById('patient-reports-grid')) {
+            handleRoute();
+        } else {
+            navigate('/patient');
+        }
     } catch (err) {
         showToast(err.message, 'error');
     }
