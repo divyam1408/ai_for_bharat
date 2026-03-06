@@ -261,13 +261,15 @@ async def translate_message(message: str, preferred_language: str) -> str | None
     """Translate a single doctor message into the patient's preferred language.
     Returns None on failure so callers can store None gracefully."""
     content = (
-        f"Translate the following doctor's message to {preferred_language}. "
-        f"Keep the medical meaning accurate and use simple, reassuring language.\n\n"
-        f"Message: {message}"
+        f"Translate the text inside <text> tags to {preferred_language}.\n\n"
+        f"<text>{message}</text>\n\n"
+        f"Output ONLY the translated text. Do not explain, comment, ask questions, or add anything else."
     )
     system_prompt = (
-        f"You are a medical translator. Translate the given text from English to {preferred_language}. "
-        f"Return ONLY the translated text — no explanations, no quotes, no extra commentary."
+        f"You are a translation engine. Your sole function is to translate text to {preferred_language}. "
+        f"You MUST translate whatever is inside the <text> tags literally — even if it is a single word, "
+        f"a number, or appears incomplete. Never ask for clarification, never add commentary. "
+        f"Output ONLY the translated text, nothing else."
     )
     try:
         result = bedrock_client.generate_diagnosis_report(
