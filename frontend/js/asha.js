@@ -2,6 +2,23 @@
    ASHA Worker Pages — Dashboard, New Case Form, Chat
    ══════════════════════════════════════════════════════════════════════════ */
 
+// ── Language lookup (for understand route language badge) ─────────────────
+
+const _ASHA_LANGUAGES = [
+    { name: 'English',   code: 'en-IN', native: 'English'   },
+    { name: 'Hindi',     code: 'hi-IN', native: 'हिंदी'     },
+    { name: 'Bengali',   code: 'bn-IN', native: 'বাংলা'     },
+    { name: 'Telugu',    code: 'te-IN', native: 'తెలుగు'    },
+    { name: 'Marathi',   code: 'mr-IN', native: 'मराठी'     },
+    { name: 'Tamil',     code: 'ta-IN', native: 'தமிழ்'     },
+    { name: 'Gujarati',  code: 'gu-IN', native: 'ગુજરાતી'  },
+    { name: 'Kannada',   code: 'kn-IN', native: 'ಕನ್ನಡ'    },
+    { name: 'Malayalam', code: 'ml-IN', native: 'മലയാളം'   },
+    { name: 'Punjabi',   code: 'pa-IN', native: 'ਪੰਜਾਬੀ'  },
+    { name: 'Odia',      code: 'or-IN', native: 'ଓଡ଼ିଆ'    },
+];
+const ASHA_LANG_BY_NAME = Object.fromEntries(_ASHA_LANGUAGES.map(l => [l.name, l]));
+
 // ── ASHA Dashboard ────────────────────────────────────────────────────────
 
 let _ashaDashReports = [];
@@ -172,6 +189,11 @@ function renderAshaCaseCard(r) {
         </div>` : `
         <div style="color:var(--text-muted);font-size:0.85rem">Awaiting diagnosis</div>`}
         <div style="color:var(--text-muted);font-size:0.8rem;margin-top:0.75rem">📅 ${date}</div>
+        ${r.status === 'completed' ? `
+        <button class="btn btn-understand btn-sm" style="width:100%;margin-top:0.75rem"
+                onclick="event.stopPropagation();navigate('/asha/understand/${r.id}')">
+            💡 Understand My Diagnosis
+        </button>` : ''}
     </div>`;
 }
 
@@ -864,6 +886,10 @@ registerRoute('/asha/case/:id', async (app, params) => {
                 <button class="btn btn-primary btn-lg" style="width:100%;margin-top:1.5rem" onclick="ashaPrintPrescription(${r.id})">
                     📥 Download Prescription
                 </button>
+                <button class="btn btn-understand" style="width:100%;margin-top:0.75rem"
+                        onclick="navigate('/asha/understand/${r.id}')">
+                    💡 Understand your report in simple language
+                </button>
             </div>` : ''}
         `;
     } catch (err) {
@@ -1136,4 +1162,168 @@ registerRoute('/asha/profile', async (app) => {
     } catch (err) {
         showToast(err.message, 'error');
     }
+});
+
+// ── ASHA Understand Diagnosis ─────────────────────────────────────────────
+
+registerRoute('/asha/understand/:id', async (app, params) => {
+    const user = getUser();
+    if (!user || user.role !== 'asha_worker') { navigate('/login'); return; }
+
+    const reportId = params.id;
+    let understandHistory = [];
+    let micRecognition = null;
+    let prefLangCode = 'en-IN';
+
+    app.innerHTML = renderNavbar('asha') + `
+    <div class="chat-container">
+        <div class="understand-chat-header">
+            <button class="btn btn-secondary btn-sm" onclick="navigate('/asha/case/${reportId}')">
+                ← Back to Report
+            </button>
+            <div class="understand-chat-title">
+                <span>💡</span>
+                <span>Understand Your Diagnosis</span>
+            </div>
+            <span class="lang-active-badge" id="understand-lang-badge" title="Conversation language">…</span>
+        </div>
+        <div class="chat-messages" id="understand-messages">
+            <div class="chat-bubble assistant" id="initial-message">
+                <div class="bubble-label">Health Assistant</div>
+                <span style="opacity:0.75">
+                    📋 Reading your report and preparing a simple explanation just for you...
+                </span>
+                <div class="typing-indicator" id="initial-typing" style="margin-top:0.5rem">
+                    <span></span><span></span><span></span>
+                </div>
+            </div>
+        </div>
+        <div class="chat-input-area">
+            <input type="text" class="form-input" id="understand-input"
+                   placeholder="Ask a question about your report..." autocomplete="off">
+            <button class="btn btn-mic" id="mic-btn" title="Speak your question"
+                    onclick="toggleAshaUnderstandMic()">🎤</button>
+            <button class="btn btn-understand" id="understand-send-btn"
+                    onclick="sendAshaUnderstandMessage(${reportId})">Send</button>
+        </div>
+    </div>`;
+
+    document.getElementById('understand-input').addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            document.getElementById('understand-send-btn').click();
+        }
+    });
+
+    window.toggleAshaUnderstandMic = function () {
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        if (!SpeechRecognition) {
+            showToast('Speech recognition is not supported in your browser', 'error');
+            return;
+        }
+        const micBtn = document.getElementById('mic-btn');
+        if (micRecognition) {
+            micRecognition.stop();
+            micRecognition = null;
+            micBtn.classList.remove('active');
+            micBtn.textContent = '🎤';
+            return;
+        }
+        micRecognition = new SpeechRecognition();
+        micRecognition.lang = prefLangCode;
+        micRecognition.continuous = false;
+        micRecognition.interimResults = false;
+        micBtn.classList.add('active');
+        micBtn.textContent = '⏹';
+        micRecognition.onresult = (event) => {
+            const transcript = event.results[0][0].transcript;
+            const input = document.getElementById('understand-input');
+            if (input) input.value = transcript;
+            micRecognition = null;
+            micBtn.classList.remove('active');
+            micBtn.textContent = '🎤';
+        };
+        micRecognition.onerror = () => {
+            micRecognition = null;
+            if (micBtn) { micBtn.classList.remove('active'); micBtn.textContent = '🎤'; }
+            showToast('Could not capture audio — please try again.', 'error');
+        };
+        micRecognition.onend = () => {
+            micRecognition = null;
+            if (micBtn) { micBtn.classList.remove('active'); micBtn.textContent = '🎤'; }
+        };
+        micRecognition.start();
+    };
+
+    // Auto-load initial explanation
+    try {
+        const data = await apiFetch(`/api/asha/understand-case/${reportId}`, {
+            method: 'POST',
+            body: JSON.stringify({ message: null, chat_history: [] }),
+        });
+        if (data.preferred_language) {
+            const langInfo = ASHA_LANG_BY_NAME[data.preferred_language];
+            prefLangCode = langInfo ? langInfo.code : 'en-IN';
+            const badge = document.getElementById('understand-lang-badge');
+            if (badge) badge.textContent = langInfo ? langInfo.native : data.preferred_language;
+        }
+        document.getElementById('initial-message')?.remove();
+        understandHistory.push({ role: 'assistant', content: data.response });
+        const messagesDiv = document.getElementById('understand-messages');
+        messagesDiv.innerHTML += `
+            <div class="chat-bubble assistant">
+                <div class="bubble-label">Health Assistant</div>
+                ${renderMarkdown(data.response)}
+            </div>`;
+        messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        document.getElementById('understand-input')?.focus();
+    } catch (err) {
+        document.getElementById('initial-message')?.remove();
+        showToast('Could not load explanation: ' + err.message, 'error');
+    }
+
+    window.sendAshaUnderstandMessage = async function (rId) {
+        const input = document.getElementById('understand-input');
+        const message = input.value.trim();
+        if (!message) return;
+
+        const messagesDiv = document.getElementById('understand-messages');
+        const sendBtn = document.getElementById('understand-send-btn');
+        const historyBeforeSend = [...understandHistory];
+
+        understandHistory.push({ role: 'user', content: message });
+        messagesDiv.innerHTML += `
+            <div class="chat-bubble patient">
+                <div class="bubble-label">You</div>
+                ${escapeHtml(message)}
+            </div>`;
+        input.value = '';
+        input.disabled = true;
+        sendBtn.disabled = true;
+        messagesDiv.innerHTML += `<div class="typing-indicator" id="understand-typing"><span></span><span></span><span></span></div>`;
+        messagesDiv.scrollTop = messagesDiv.scrollHeight;
+
+        try {
+            const data = await apiFetch(`/api/asha/understand-case/${rId}`, {
+                method: 'POST',
+                body: JSON.stringify({ message, chat_history: historyBeforeSend }),
+            });
+            document.getElementById('understand-typing')?.remove();
+            understandHistory.push({ role: 'assistant', content: data.response });
+            messagesDiv.innerHTML += `
+                <div class="chat-bubble assistant">
+                    <div class="bubble-label">Health Assistant</div>
+                    ${renderMarkdown(data.response)}
+                </div>`;
+        } catch (err) {
+            document.getElementById('understand-typing')?.remove();
+            understandHistory.pop();
+            showToast(err.message, 'error');
+        }
+
+        input.disabled = false;
+        sendBtn.disabled = false;
+        input.focus();
+        messagesDiv.scrollTop = messagesDiv.scrollHeight;
+    };
 });

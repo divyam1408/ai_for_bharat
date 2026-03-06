@@ -4,7 +4,7 @@ import os
 import base64
 import mimetypes
 from fastapi import APIRouter, Depends, HTTPException
-from models import AshaStartCase, ChatMessage, DiagnosisResponse
+from models import AshaStartCase, ChatMessage, DiagnosisResponse, UnderstandReportRequest
 from auth import get_current_user
 from database import (
     create_asha_chat_session,
@@ -17,7 +17,7 @@ from database import (
     save_doctor_patient_message,
     update_report_status,
 )
-from services.ai_doctor import chat_response, generate_diagnosis_from_chat
+from services.ai_doctor import chat_response, generate_diagnosis_from_chat, explain_diagnosis
 
 router = APIRouter(prefix="/api/asha", tags=["asha"])
 
@@ -212,6 +212,55 @@ async def asha_respond_to_feedback(
     return {"message": "Response sent to doctor", "status": "pending_review"}
 
 
+@router.post("/understand-case/{report_id}")
+async def understand_case(
+    report_id: int,
+    data: UnderstandReportRequest,
+    user: dict = Depends(get_current_user),
+):
+    """Explain the completed diagnosis in plain language for the ASHA worker."""
+    if user["role"] != "asha_worker":
+        raise HTTPException(status_code=403, detail="Only ASHA workers can use this feature")
+
+    report = await get_report_by_id(report_id)
+    if not report:
+        raise HTTPException(status_code=404, detail="Case not found")
+    if report.get("asha_worker_id") != user["user_id"]:
+        raise HTTPException(status_code=403, detail="Access denied")
+    if report["status"] != "completed":
+        raise HTTPException(status_code=400, detail="This report has not been finalized by a doctor yet")
+    if not report.get("final_diagnosis"):
+        raise HTTPException(status_code=400, detail="No final report found for this diagnosis")
+
+    report_context = "\n".join([
+        "=== Patient Background ===",
+        f"Age: {report.get('patient_age_text') or 'Not provided'}",
+        f"Gender: {report.get('patient_gender_text') or 'Not provided'}",
+        f"Known Medical History / Long-term Conditions: {report.get('medical_history') or 'None mentioned'}",
+        f"Current Medications (before this visit): {report.get('current_medications') or 'None mentioned'}",
+        "",
+        "=== Doctor's Final Report ===",
+        f"Condition Diagnosed: {report.get('final_diagnosis', 'Not provided')}",
+        f"Urgency Level: {report.get('urgency', 'Not provided')}",
+        f"Prescribed Medications: {report.get('prescribed_medications') or 'None'}",
+        f"Dosage Instructions: {report.get('dosage_instructions') or 'Not provided'}",
+        f"Follow-up Date: {report.get('follow_up_date') or 'Not specified'}",
+        f"Diet & Lifestyle Advice: {report.get('diet_lifestyle') or 'Not provided'}",
+        f"Additional Instructions: {report.get('additional_instructions') or 'None'}",
+        f"Doctor's Notes: {report.get('doctor_comments') or 'None'}",
+        "=== End of Report ===",
+    ])
+
+    preferred_language = report.get("preferred_language", "English")
+    response_text = await explain_diagnosis(
+        report_context=report_context,
+        message=data.message,
+        chat_history=data.chat_history,
+        preferred_language=preferred_language,
+    )
+    return {"response": response_text, "preferred_language": preferred_language}
+
+
 @router.get("/profile")
 async def get_asha_profile(user: dict = Depends(get_current_user)):
     """Get ASHA worker's profile and case counts."""
@@ -219,6 +268,8 @@ async def get_asha_profile(user: dict = Depends(get_current_user)):
         raise HTTPException(status_code=403, detail="Only ASHA workers can access this")
     from database import get_user_by_id
     profile = await get_user_by_id(user["user_id"])
+    if not profile:
+        raise HTTPException(status_code=404, detail="User profile not found. Please log in again.")
     reports = await get_asha_reports(user["user_id"])
     in_review  = sum(1 for r in reports if
                      (r["status"] == "pending_review" and r.get("doctor_id")) or

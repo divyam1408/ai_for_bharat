@@ -119,7 +119,7 @@ async def init_db():
         """)
         await db.commit()
 
-        # Migrations for columns added after initial schema
+        # Simple ADD COLUMN migrations (fail silently if column already exists)
         for migration in [
             "ALTER TABLE users ADD COLUMN age INTEGER",
             "ALTER TABLE users ADD COLUMN gender TEXT",
@@ -135,28 +135,10 @@ async def init_db():
             "ALTER TABLE final_reports ADD COLUMN diet_lifestyle_local TEXT",
             "ALTER TABLE final_reports ADD COLUMN additional_instructions_local TEXT",
             "ALTER TABLE doctor_patient_messages ADD COLUMN message_local TEXT",
-            # Rebuild users table to expand the role CHECK constraint to include asha_worker
-            """CREATE TABLE IF NOT EXISTS users_new (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT NOT NULL,
-                email TEXT UNIQUE NOT NULL,
-                password_hash TEXT NOT NULL,
-                role TEXT NOT NULL CHECK(role IN ('patient', 'doctor', 'asha_worker')),
-                specialization TEXT,
-                age INTEGER,
-                gender TEXT,
-                created_at TEXT NOT NULL DEFAULT (datetime('now'))
-            )""",
-            "INSERT OR IGNORE INTO users_new (id, name, email, password_hash, role, specialization, age, gender, created_at) SELECT id, name, email, password_hash, role, specialization, age, gender, created_at FROM users",
-            "DROP TABLE IF EXISTS users_old",
-            "ALTER TABLE users RENAME TO users_old",
-            "ALTER TABLE users_new RENAME TO users",
-            "DROP TABLE IF EXISTS users_old",
             "ALTER TABLE diagnosis_reports ADD COLUMN asha_worker_id INTEGER REFERENCES users(id)",
             "ALTER TABLE diagnosis_reports ADD COLUMN patient_name_text TEXT",
             "ALTER TABLE diagnosis_reports ADD COLUMN patient_age_text INTEGER",
             "ALTER TABLE diagnosis_reports ADD COLUMN patient_gender_text TEXT",
-            # Registration number for doctors and ASHA workers (future: validate authenticity)
             "ALTER TABLE users ADD COLUMN registration_number TEXT",
         ]:
             try:
@@ -164,6 +146,34 @@ async def init_db():
                 await db.commit()
             except Exception:
                 pass  # column already exists
+
+        # One-time migration: rebuild users table to add 'asha_worker' to role CHECK constraint.
+        # Guarded by sqlite_master check so it only runs when actually needed, never on every restart.
+        cur = await db.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='users'")
+        row = await cur.fetchone()
+        if row and 'asha_worker' not in row[0]:
+            await db.executescript("""
+                CREATE TABLE IF NOT EXISTS users_new (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL,
+                    email TEXT UNIQUE NOT NULL,
+                    password_hash TEXT NOT NULL,
+                    role TEXT NOT NULL CHECK(role IN ('patient', 'doctor', 'asha_worker')),
+                    specialization TEXT,
+                    age INTEGER,
+                    gender TEXT,
+                    registration_number TEXT,
+                    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+                );
+                INSERT OR IGNORE INTO users_new
+                    (id, name, email, password_hash, role, specialization, age, gender, created_at)
+                    SELECT id, name, email, password_hash, role, specialization, age, gender, created_at
+                    FROM users;
+                ALTER TABLE users RENAME TO users_old;
+                ALTER TABLE users_new RENAME TO users;
+                DROP TABLE IF EXISTS users_old;
+            """)
+            await db.commit()
     finally:
         await db.close()
 
