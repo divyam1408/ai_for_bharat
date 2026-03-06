@@ -15,6 +15,7 @@ from mangum import Mangum
 from routes.auth_routes import router as auth_router
 from routes.patient_routes import router as patient_router
 from routes.doctor_routes import router as doctor_router
+from routes.asha_routes import router as asha_router
 
 PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "").rstrip("/")
 FRONTEND_DIR = os.path.join(os.path.dirname(__file__), "..", "frontend")
@@ -58,6 +59,7 @@ app.add_middleware(
 app.include_router(auth_router)
 app.include_router(patient_router)
 app.include_router(doctor_router)
+app.include_router(asha_router)
 
 # Serve uploaded files
 app.mount("/uploads", StaticFiles(directory=UPLOADS_DIR), name="uploads")

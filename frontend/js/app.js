@@ -3,9 +3,9 @@
    ══════════════════════════════════════════════════════════════════════════ */
 
 //window.API_BASE = 'https://cycq1wk7n3.execute-api.ap-south-1.amazonaws.com';  // same origin
-//window.API_BASE = '';  // same origin
+window.API_BASE = '';  // same origin
 //window.API_BASE = 'http://52.66.108.187:8000';
-window.API_BASE = 'https://d2df2cxhh3eeoh.cloudfront.net'
+//window.API_BASE = 'https://d2df2cxhh3eeoh.cloudfront.net'
 // ── State ─────────────────────────────────────────────────────────────────
 
 function getToken() { return localStorage.getItem('token'); }
@@ -172,7 +172,21 @@ async function handleRoute() {
 
 function renderNavbar(role) {
     const user = getUser();
-    const isPatient = role === 'patient';
+
+    let navLinks;
+    if (role === 'patient') {
+        navLinks = `
+            <button class="btn btn-sm btn-secondary" onclick="navigate('/patient')">Dashboard</button>
+            <button class="btn btn-sm btn-secondary" onclick="navigate('/patient/profile')">My Profile</button>`;
+    } else if (role === 'asha') {
+        navLinks = `
+            <button class="btn btn-sm btn-secondary" onclick="navigate('/asha')">Dashboard</button>
+            <button class="btn btn-sm btn-secondary" onclick="navigate('/asha/profile')">My Profile</button>`;
+    } else {
+        navLinks = `
+            <button class="btn btn-sm btn-secondary" onclick="navigate('/doctor')">Dashboard</button>
+            <button class="btn btn-sm btn-secondary" onclick="navigate('/doctor/profile')">My Profile</button>`;
+    }
 
     return `
     <nav class="navbar">
@@ -181,13 +195,7 @@ function renderNavbar(role) {
             <span>AI Healthcare</span>
         </div>
         <div class="navbar-actions">
-            ${isPatient ? `
-                <button class="btn btn-sm btn-secondary" onclick="navigate('/patient')">Dashboard</button>
-                <button class="btn btn-sm btn-secondary" onclick="navigate('/patient/profile')">My Profile</button>
-            ` : `
-                <button class="btn btn-sm btn-secondary" onclick="navigate('/doctor')">Dashboard</button>
-                <button class="btn btn-sm btn-secondary" onclick="navigate('/doctor/profile')">My Profile</button>
-            `}
+            ${navLinks}
             <span class="navbar-user">👤 ${user?.name || ''}</span>
             <button class="btn btn-sm btn-secondary" onclick="logout()">Logout</button>
         </div>
@@ -208,7 +216,9 @@ window.addEventListener('DOMContentLoaded', () => {
     if (!window.location.hash) {
         const user = getUser();
         if (user) {
-            navigate(user.role === 'doctor' ? '/doctor' : '/patient');
+            if (user.role === 'doctor') navigate('/doctor');
+            else if (user.role === 'asha_worker') navigate('/asha');
+            else navigate('/patient');
         } else {
             navigate('/login');
         }

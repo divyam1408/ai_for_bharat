@@ -27,7 +27,7 @@ async def init_db():
                 name TEXT NOT NULL,
                 email TEXT UNIQUE NOT NULL,
                 password_hash TEXT NOT NULL,
-                role TEXT NOT NULL CHECK(role IN ('patient', 'doctor')),
+                role TEXT NOT NULL CHECK(role IN ('patient', 'doctor', 'asha_worker')),
                 specialization TEXT,
                 age INTEGER,
                 gender TEXT,
@@ -135,6 +135,29 @@ async def init_db():
             "ALTER TABLE final_reports ADD COLUMN diet_lifestyle_local TEXT",
             "ALTER TABLE final_reports ADD COLUMN additional_instructions_local TEXT",
             "ALTER TABLE doctor_patient_messages ADD COLUMN message_local TEXT",
+            # Rebuild users table to expand the role CHECK constraint to include asha_worker
+            """CREATE TABLE IF NOT EXISTS users_new (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                email TEXT UNIQUE NOT NULL,
+                password_hash TEXT NOT NULL,
+                role TEXT NOT NULL CHECK(role IN ('patient', 'doctor', 'asha_worker')),
+                specialization TEXT,
+                age INTEGER,
+                gender TEXT,
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            )""",
+            "INSERT OR IGNORE INTO users_new (id, name, email, password_hash, role, specialization, age, gender, created_at) SELECT id, name, email, password_hash, role, specialization, age, gender, created_at FROM users",
+            "DROP TABLE IF EXISTS users_old",
+            "ALTER TABLE users RENAME TO users_old",
+            "ALTER TABLE users_new RENAME TO users",
+            "DROP TABLE IF EXISTS users_old",
+            "ALTER TABLE diagnosis_reports ADD COLUMN asha_worker_id INTEGER REFERENCES users(id)",
+            "ALTER TABLE diagnosis_reports ADD COLUMN patient_name_text TEXT",
+            "ALTER TABLE diagnosis_reports ADD COLUMN patient_age_text INTEGER",
+            "ALTER TABLE diagnosis_reports ADD COLUMN patient_gender_text TEXT",
+            # Registration number for doctors and ASHA workers (future: validate authenticity)
+            "ALTER TABLE users ADD COLUMN registration_number TEXT",
         ]:
             try:
                 await db.execute(migration)
@@ -150,13 +173,14 @@ async def init_db():
 async def create_user(name: str, email: str, password_hash: str, role: str,
                       specialization: str | None = None,
                       age: int | None = None,
-                      gender: str | None = None) -> int:
+                      gender: str | None = None,
+                      registration_number: str | None = None) -> int:
     db = await get_db()
     try:
         cursor = await db.execute(
-            "INSERT INTO users (name, email, password_hash, role, specialization, age, gender) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (name, email, password_hash, role, specialization, age, gender),
+            "INSERT INTO users (name, email, password_hash, role, specialization, age, gender, registration_number) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (name, email, password_hash, role, specialization, age, gender, registration_number),
         )
         await db.commit()
         return cursor.lastrowid
@@ -232,6 +256,55 @@ async def delete_stale_chat_sessions(patient_id: int) -> None:
             await db.execute("DELETE FROM chat_messages WHERE report_id = ?", (stale_id,))
             await db.execute("DELETE FROM diagnosis_reports WHERE id = ?", (stale_id,))
         await db.commit()
+    finally:
+        await db.close()
+
+
+async def create_asha_chat_session(
+    asha_worker_id: int,
+    patient_name: str,
+    patient_age: int | None = None,
+    patient_gender: str | None = None,
+    medical_history: str = "",
+    current_medications: str = "",
+    preferred_language: str = "English",
+) -> int:
+    """Create a shell diagnosis report for an ASHA-assisted case (no patient account)."""
+    db = await get_db()
+    try:
+        cursor = await db.execute(
+            """INSERT INTO diagnosis_reports
+               (patient_id, symptoms, medical_history, current_medications, age, gender,
+                preferred_language, status, asha_worker_id, patient_name_text,
+                patient_age_text, patient_gender_text)
+               VALUES (?, '', ?, ?, ?, ?, ?, 'chatting', ?, ?, ?, ?)""",
+            (asha_worker_id, medical_history, current_medications,
+             patient_age, patient_gender, preferred_language,
+             asha_worker_id, patient_name, patient_age, patient_gender),
+        )
+        await db.commit()
+        return cursor.lastrowid
+    finally:
+        await db.close()
+
+
+async def get_asha_reports(asha_worker_id: int) -> list[dict]:
+    """Get all cases submitted by an ASHA worker (excluding active chatting sessions)."""
+    db = await get_db()
+    try:
+        cursor = await db.execute(
+            """SELECT dr.id, dr.patient_name_text, dr.patient_age_text, dr.patient_gender_text,
+                      dr.primary_condition, dr.urgency, dr.confidence, dr.status,
+                      dr.created_at, dr.preferred_language, dr.doctor_id,
+                      fr.created_at as review_date
+               FROM diagnosis_reports dr
+               LEFT JOIN final_reports fr ON fr.report_id = dr.id
+               WHERE dr.asha_worker_id = ? AND dr.status != 'chatting'
+               ORDER BY dr.created_at DESC""",
+            (asha_worker_id,),
+        )
+        rows = await cursor.fetchall()
+        return [dict(r) for r in rows]
     finally:
         await db.close()
 
@@ -352,7 +425,7 @@ async def get_pending_reports() -> list[dict]:
             """SELECT dr.*, u.name as patient_name
                FROM diagnosis_reports dr
                JOIN users u ON dr.patient_id = u.id
-               WHERE dr.status = 'pending_review'
+               WHERE dr.status = 'pending_review' AND dr.doctor_id IS NULL
                ORDER BY
                  CASE dr.urgency
                    WHEN 'critical' THEN 0

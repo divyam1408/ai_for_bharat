@@ -10,6 +10,7 @@ from enum import Enum
 class UserRole(str, Enum):
     PATIENT = "patient"
     DOCTOR = "doctor"
+    ASHA_WORKER = "asha_worker"
 
 
 class ReportStatus(str, Enum):
@@ -34,9 +35,10 @@ class UserRegister(BaseModel):
     email: str
     password: str
     role: UserRole
-    specialization: Optional[str] = None  # for doctors
-    age: Optional[int] = None             # for patients
-    gender: Optional[str] = None          # for patients
+    specialization: Optional[str] = None       # for doctors
+    age: Optional[int] = None                  # for patients
+    gender: Optional[str] = None               # for patients
+    registration_number: Optional[str] = None  # mandatory for doctors and ASHA workers
 
 
 class UserLogin(BaseModel):
@@ -120,3 +122,14 @@ class DoctorFeedbackRequest(BaseModel):
 class ResearchQuery(BaseModel):
     query: str
     context: Optional[str] = ""  # optional diagnosis context
+
+
+# ── ASHA Worker Models ──────────────────────────────────────────────────────
+
+class AshaStartCase(BaseModel):
+    patient_name: str
+    patient_age: Optional[int] = None
+    patient_gender: Optional[str] = None
+    medical_history: Optional[str] = ""
+    current_medications: Optional[str] = ""
+    preferred_language: Optional[str] = "English"

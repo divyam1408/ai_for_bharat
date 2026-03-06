@@ -15,6 +15,12 @@ async def register(data: UserRegister):
     if existing:
         raise HTTPException(status_code=400, detail="Email already registered")
 
+    if data.role.value in ("doctor", "asha_worker") and not data.registration_number:
+        raise HTTPException(
+            status_code=400,
+            detail="Registration number is required for doctors and ASHA workers",
+        )
+
     password_hash = hash_password(data.password)
     user_id = await create_user(
         name=data.name,
@@ -24,6 +30,7 @@ async def register(data: UserRegister):
         specialization=data.specialization,
         age=data.age,
         gender=data.gender,
+        registration_number=data.registration_number,
     )
 
     token = create_token(user_id, data.role.value, data.name)

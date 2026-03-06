@@ -67,7 +67,9 @@ registerRoute('/login', async (app) => {
             setToken(data.access_token);
             setUser({ user_id: data.user_id, name: data.name, role: data.role });
             showToast(`Welcome back, ${data.name}!`, 'success');
-            navigate(data.role === 'doctor' ? '/doctor' : '/patient');
+            if (data.role === 'doctor') navigate('/doctor');
+            else if (data.role === 'asha_worker') navigate('/asha');
+            else navigate('/patient');
         } catch (err) {
             showToast(err.message, 'error');
             btn.disabled = false;
@@ -121,6 +123,7 @@ registerRoute('/register', async (app) => {
             <div class="auth-tabs">
                 <button class="auth-tab active" data-role="patient" id="tab-patient">🧑 Patient</button>
                 <button class="auth-tab" data-role="doctor" id="tab-doctor">🩺 Doctor</button>
+                <button class="auth-tab" data-role="asha_worker" id="tab-asha">🌿 ASHA Worker</button>
             </div>
 
             <form id="register-form" novalidate>
@@ -138,6 +141,12 @@ registerRoute('/register', async (app) => {
                     <label class="form-label">Password <span class="required-mark">*</span></label>
                     <input type="password" class="form-input" id="reg-password"
                            placeholder="Create a password (min 4 characters)" autocomplete="new-password">
+                </div>
+
+                <div class="form-group" id="registration-number-group" style="display:none">
+                    <label class="form-label">Registration Number <span class="required-mark">*</span></label>
+                    <input type="text" class="form-input" id="reg-registration-number"
+                           placeholder="Enter your official registration number">
                 </div>
 
                 <div class="form-group" id="specialization-group" style="display:none">
@@ -187,7 +196,7 @@ registerRoute('/register', async (app) => {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
     function clearForm() {
-        ['reg-name', 'reg-email', 'reg-password'].forEach(id => {
+        ['reg-name', 'reg-email', 'reg-password', 'reg-registration-number'].forEach(id => {
             const el = document.getElementById(id);
             el.value = '';
             el.classList.remove('input-error');
@@ -208,6 +217,8 @@ registerRoute('/register', async (app) => {
             tab.classList.add('active');
             selectedRole = tab.dataset.role;
             clearForm();
+            document.getElementById('registration-number-group').style.display =
+                (selectedRole === 'doctor' || selectedRole === 'asha_worker') ? 'block' : 'none';
             document.getElementById('specialization-group').style.display =
                 selectedRole === 'doctor' ? 'block' : 'none';
             document.getElementById('patient-profile-group').style.display =
@@ -314,6 +325,15 @@ registerRoute('/register', async (app) => {
             }
         }
 
+        if (selectedRole === 'doctor' || selectedRole === 'asha_worker') {
+            const regNum = document.getElementById('reg-registration-number').value.trim();
+            if (!regNum) {
+                document.getElementById('reg-registration-number').classList.add('input-error');
+                showToast('Registration number is required', 'error');
+                return;
+            }
+        }
+
         btn.disabled = true;
         btn.innerHTML = '<span class="spinner"></span> Creating account...';
 
@@ -324,6 +344,10 @@ registerRoute('/register', async (app) => {
                 password: passInput.value,
                 role:     selectedRole,
             };
+
+            if (selectedRole === 'doctor' || selectedRole === 'asha_worker') {
+                body.registration_number = document.getElementById('reg-registration-number').value.trim();
+            }
 
             if (selectedRole === 'doctor') {
                 const specVal = specSelect.value;
@@ -355,7 +379,9 @@ registerRoute('/register', async (app) => {
             setToken(data.access_token);
             setUser({ user_id: data.user_id, name: data.name, role: data.role });
             showToast(`Welcome, ${data.name}! Account created.`, 'success');
-            navigate(data.role === 'doctor' ? '/doctor' : '/patient');
+            if (data.role === 'doctor') navigate('/doctor');
+            else if (data.role === 'asha_worker') navigate('/asha');
+            else navigate('/patient');
         } catch (err) {
             showToast(err.message, 'error');
             btn.disabled = false;
