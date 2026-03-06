@@ -91,6 +91,11 @@ desktop.ini
 *.swp
 *~
 
+# AWS SAM
+.aws-sam/
+samconfig.toml
+template.yaml
+
 # API Keys and Secrets (extra safety)
 *_API_KEY*
 *_SECRET*
